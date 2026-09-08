@@ -1,0 +1,31 @@
+---
+description: Keep PLAN.md and IMPLEMENTATION.md in sync on every product or code change
+alwaysApply: true
+---
+
+# Living documentation
+
+Two docs define Bob-n-Pam Drive. Update **both** when a change touches product and implementation.
+
+| Doc | Path | Contains |
+|-----|------|----------|
+| Product plan | `docs/PLAN.md` | What/why: UX, booking rules, out of scope |
+| Implementation | `docs/IMPLEMENTATION.md` | How: stack, routes, data, logic |
+
+## Update protocol
+
+1. **Product/UX/requirement change** → edit `docs/PLAN.md` first, then `docs/IMPLEMENTATION.md`.
+2. **Code/architecture change** → edit `docs/IMPLEMENTATION.md` to match reality, then `docs/PLAN.md` if behavior changed.
+3. **Never update only one file** when the change affects both. Typo-only fixes: changelog on that file only.
+4. On every substantive edit:
+   - Refresh **Last updated** at the top of each file you changed
+   - Prepend a **Changelog** bullet: date, what changed, which doc drove the change
+
+## Division of labor
+
+- **PLAN.md** — no file trees or library names unless the customer sees them
+- **IMPLEMENTATION.md** — must reflect actual code; behavior must match PLAN.md
+
+## When to skip
+
+Pure refactors with no behavior change: IMPLEMENTATION changelog only if structure/routes changed.
