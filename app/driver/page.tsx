@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh';
+import { US_STATE_CODES } from '@/lib/address';
 import FaresByMonthReport from '@/components/reports/FaresByMonthReport';
 import MonthlyRidesDestinationsReport from '@/components/reports/MonthlyRidesDestinationsReport';
 
@@ -27,6 +28,50 @@ type Booking = {
   notes: string | null;
   amountCharged: number | null;
   amountReceived: number | null;
+};
+
+type OpenSlot = {
+  driverId: number;
+  driverName: string;
+  startAt: string;
+  endAt: string;
+  dateKey: string;
+};
+
+type SlotDay = {
+  dateKey: string;
+  label: string;
+  slots: OpenSlot[];
+};
+
+type AddRideForm = {
+  customerName: string;
+  customerPhone: string;
+  pickupStreet: string;
+  pickupCity: string;
+  pickupState: string;
+  pickupZip: string;
+  dropoffStreet: string;
+  dropoffCity: string;
+  dropoffState: string;
+  dropoffZip: string;
+  allowUnverifiedPickup: boolean;
+  allowUnverifiedDropoff: boolean;
+};
+
+const emptyAddRideForm: AddRideForm = {
+  customerName: '',
+  customerPhone: '',
+  pickupStreet: '',
+  pickupCity: '',
+  pickupState: 'SC',
+  pickupZip: '',
+  dropoffStreet: '',
+  dropoffCity: '',
+  dropoffState: 'SC',
+  dropoffZip: '',
+  allowUnverifiedPickup: false,
+  allowUnverifiedDropoff: false,
 };
 
 type DriverMoneyTotal = {
@@ -256,6 +301,7 @@ export default function DriverBoardPage() {
   const [driverFilters, setDriverFilters] = useState<Record<number, boolean>>({});
   const [sortColumn, setSortColumn] = useState<RideSortColumn>('when');
   const [sortDirection, setSortDirection] = useState<RideSortDirection>('asc');
+  const [addRideOpen, setAddRideOpen] = useState(false);
   const tabRef = useRef<Tab>('rides');
   const settingsDirtyRef = useRef(false);
 
@@ -518,78 +564,95 @@ export default function DriverBoardPage() {
         <section className="card">
           <h2 className="section-title">Booked rides</h2>
 
+          <div className="rides-datagrid-toolbar">
+            <div className="rides-datagrid-filters">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showPending}
+                  onChange={(event) => setShowPending(event.target.checked)}
+                />
+                Show Pending
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showDone}
+                  onChange={(event) => setShowDone(event.target.checked)}
+                />
+                Show Done
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showConfirmed}
+                  onChange={(event) => setShowConfirmed(event.target.checked)}
+                />
+                Show Confirmed
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showDeclined}
+                  onChange={(event) => setShowDeclined(event.target.checked)}
+                />
+                Show Declined
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showNoShow}
+                  onChange={(event) => setShowNoShow(event.target.checked)}
+                />
+                Show No-Show
+              </label>
+              {allDrivers.map((d) => (
+                <label key={d.id}>
+                  <input
+                    type="checkbox"
+                    checked={!!driverFilters[d.id]}
+                    onChange={(event) =>
+                      setDriverFilters((prev) => ({
+                        ...prev,
+                        [d.id]: event.target.checked,
+                      }))
+                    }
+                  />
+                  {d.firstName}&apos;s Rides
+                </label>
+              ))}
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setAddRideOpen(true)}
+              >
+                Add Ride
+              </button>
+            </div>
+          </div>
+
+          {addRideOpen && (
+            <AddRidePanel
+              drivers={allDrivers}
+              currentDriverId={currentDriverId}
+              onClose={() => setAddRideOpen(false)}
+              onCreated={async (driverId, successMessage) => {
+                setDriverFilters((prev) => ({ ...prev, [driverId]: true }));
+                setAddRideOpen(false);
+                setMessage(successMessage);
+                await loadAll();
+              }}
+            />
+          )}
+
           {bookings.length === 0 && <p>No bookings yet.</p>}
 
-          {bookings.length > 0 && (
-            <>
-              <div className="rides-datagrid-toolbar">
-                <div className="rides-datagrid-filters">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={showPending}
-                      onChange={(event) => setShowPending(event.target.checked)}
-                    />
-                    Show Pending
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={showDone}
-                      onChange={(event) => setShowDone(event.target.checked)}
-                    />
-                    Show Done
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={showConfirmed}
-                      onChange={(event) => setShowConfirmed(event.target.checked)}
-                    />
-                    Show Confirmed
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={showDeclined}
-                      onChange={(event) => setShowDeclined(event.target.checked)}
-                    />
-                    Show Declined
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={showNoShow}
-                      onChange={(event) => setShowNoShow(event.target.checked)}
-                    />
-                    Show No-Show
-                  </label>
-                  {allDrivers.map((d) => (
-                    <label key={d.id}>
-                      <input
-                        type="checkbox"
-                        checked={!!driverFilters[d.id]}
-                        onChange={(event) =>
-                          setDriverFilters((prev) => ({
-                            ...prev,
-                            [d.id]: event.target.checked,
-                          }))
-                        }
-                      />
-                      {d.firstName}&apos;s Rides
-                    </label>
-                  ))}
-                </div>
-              </div>
+          {bookings.length > 0 && sortedBookings.length === 0 && (
+            <p className="rides-datagrid-empty">No rides match your filters.</p>
+          )}
 
-              {sortedBookings.length === 0 && (
-                <p className="rides-datagrid-empty">No rides match your filters.</p>
-              )}
-
-              <div
-                className="rides-datagrid-wrap"
-                style={{ display: sortedBookings.length ? 'block' : 'none' }}
-              >
+          {sortedBookings.length > 0 && (
+            <div className="rides-datagrid-wrap">
                 <div className="driver-rides-mobile">
                   {sortedBookings.map((booking) => (
                     <RideCard
@@ -695,8 +758,14 @@ export default function DriverBoardPage() {
                         </td>
                         <td data-label="Customer">
                           {booking.customerName}
-                          <br />
-                          <a href={`tel:${booking.customerPhone}`}>{booking.customerPhone}</a>
+                          {booking.customerPhone.trim() ? (
+                            <>
+                              <br />
+                              <a href={`tel:${booking.customerPhone}`}>
+                                {booking.customerPhone}
+                              </a>
+                            </>
+                          ) : null}
                         </td>
                         <td data-label="Trip">
                           {booking.tripType} · {booking.bookingType.toUpperCase()}
@@ -738,7 +807,6 @@ export default function DriverBoardPage() {
                   </tbody>
                 </table>
               </div>
-            </>
           )}
         </section>
       )}
@@ -1079,9 +1147,11 @@ function RideCard({
         <span>{new Date(booking.startAt).toLocaleString('en-US')}</span>
       </div>
       <strong>{booking.customerName}</strong>
-      <div>
-        <a href={`tel:${booking.customerPhone}`}>{booking.customerPhone}</a>
-      </div>
+      {booking.customerPhone.trim() ? (
+        <div>
+          <a href={`tel:${booking.customerPhone}`}>{booking.customerPhone}</a>
+        </div>
+      ) : null}
       <div>
         {booking.tripType} · {booking.pickupAddress} → {booking.dropoffAddress}
       </div>
@@ -1214,6 +1284,414 @@ function DriverHoursEditor({
           ))}
         </ul>
       </div>
+    </div>
+  );
+}
+
+type AddRideFieldValue = string | boolean;
+
+function formatSlotTime(startAt: string): string {
+  return new Date(startAt).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Driver board popout to add a phone-in ride (confirmed, open slots only).
+ */
+function AddRidePanel({
+  drivers,
+  currentDriverId,
+  onClose,
+  onCreated,
+}: {
+  drivers: { id: number; firstName: string }[];
+  currentDriverId: number | null;
+  onClose: () => void;
+  onCreated: (driverId: number, message: string) => void | Promise<void>;
+}) {
+  const [form, setForm] = useState(emptyAddRideForm);
+  const [driverId, setDriverId] = useState(
+    () => currentDriverId ?? drivers[0]?.id ?? 0
+  );
+  const [dateKey, setDateKey] = useState('');
+  const [startAt, setStartAt] = useState('');
+  const [slotDays, setSlotDays] = useState<SlotDay[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pickupNeedsConfirm, setPickupNeedsConfirm] = useState(false);
+  const [dropoffNeedsConfirm, setDropoffNeedsConfirm] = useState(false);
+
+  const loadSlots = useCallback(async () => {
+    const response = await fetch('/api/slots', { cache: 'no-store' });
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json();
+    if (Array.isArray(data.days)) {
+      setSlotDays(data.days as SlotDay[]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setLoadingSlots(true);
+      await loadSlots();
+      if (!cancelled) {
+        setLoadingSlots(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSlots]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const driverDays = useMemo(
+    () =>
+      slotDays
+        .map((day) => ({
+          dateKey: day.dateKey,
+          label: day.label,
+          slots: day.slots.filter((slot) => slot.driverId === driverId),
+        }))
+        .filter((day) => day.slots.length > 0),
+    [slotDays, driverId]
+  );
+
+  const timeSlots =
+    driverDays.find((day) => day.dateKey === dateKey)?.slots ?? [];
+
+  function updateField(field: string, value: AddRideFieldValue) {
+    const isPickupAddress =
+      field === 'pickupStreet' ||
+      field === 'pickupCity' ||
+      field === 'pickupState' ||
+      field === 'pickupZip';
+    const isDropoffAddress =
+      field === 'dropoffStreet' ||
+      field === 'dropoffCity' ||
+      field === 'dropoffState' ||
+      field === 'dropoffZip';
+
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (isPickupAddress) {
+        next.allowUnverifiedPickup = false;
+      }
+      if (isDropoffAddress) {
+        next.allowUnverifiedDropoff = false;
+      }
+      return next;
+    });
+
+    if (isPickupAddress) {
+      setPickupNeedsConfirm(false);
+    }
+    if (isDropoffAddress) {
+      setDropoffNeedsConfirm(false);
+    }
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+
+    const payload = {
+      driverId,
+      startAt,
+      customerName: form.customerName,
+      customerPhone: form.customerPhone,
+      pickup: {
+        street: form.pickupStreet,
+        city: form.pickupCity,
+        state: form.pickupState,
+        zip: form.pickupZip,
+      },
+      dropoff: {
+        street: form.dropoffStreet,
+        city: form.dropoffCity,
+        state: form.dropoffState,
+        zip: form.dropoffZip,
+      },
+      allowUnverifiedPickup: form.allowUnverifiedPickup,
+      allowUnverifiedDropoff: form.allowUnverifiedDropoff,
+    };
+
+    const response = await fetch('/api/driver/bookings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    setSubmitting(false);
+
+    if (!response.ok) {
+      if (data.error === 'address_unverified') {
+        if (data.pickupUnverified) {
+          setPickupNeedsConfirm(true);
+        }
+        if (data.dropoffUnverified) {
+          setDropoffNeedsConfirm(true);
+        }
+      }
+      if (data.error === 'slot_unavailable') {
+        await loadSlots();
+        setStartAt('');
+      }
+      setError(data.message || data.error || 'Could not add ride.');
+      return;
+    }
+
+    await onCreated(driverId, data.message || 'Ride added.');
+  }
+
+  return (
+    <div
+      className="driver-add-ride-overlay"
+      onClick={onClose}
+      role="presentation"
+    >
+      <aside
+        className="booking-panel booking-panel--open"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-ride-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="booking-panel-header">
+          <h3 id="add-ride-title" className="booking-panel-title">
+            Add Ride
+          </h3>
+          <p className="booking-panel-subtitle">
+            Phone-in ride — saved as confirmed
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary booking-panel-change"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <form className="form-grid" onSubmit={handleSubmit}>
+          <label>
+            Driver
+            <select
+              required
+              value={driverId}
+              onChange={(event) => {
+                setDriverId(Number(event.target.value));
+                setDateKey('');
+                setStartAt('');
+              }}
+            >
+              {drivers.map((driver) => (
+                <option key={driver.id} value={driver.id}>
+                  {driver.firstName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Name
+            <input
+              required
+              autoComplete="name"
+              value={form.customerName}
+              onChange={(event) => updateField('customerName', event.target.value)}
+            />
+          </label>
+          <label>
+            Phone
+            <input
+              type="tel"
+              autoComplete="tel"
+              value={form.customerPhone}
+              onChange={(event) =>
+                updateField('customerPhone', event.target.value)
+              }
+            />
+          </label>
+          <RideAddressFields
+            kind="pickup"
+            form={form}
+            needsConfirm={pickupNeedsConfirm}
+            onFieldChange={updateField}
+          />
+          <RideAddressFields
+            kind="dropoff"
+            form={form}
+            needsConfirm={dropoffNeedsConfirm}
+            onFieldChange={updateField}
+          />
+          <div className="driver-add-ride-datetime">
+            <label>
+              Date
+              <select
+                required
+                value={dateKey}
+                disabled={loadingSlots || driverDays.length === 0}
+                onChange={(event) => {
+                  setDateKey(event.target.value);
+                  setStartAt('');
+                }}
+              >
+                <option value="">
+                  {loadingSlots ? 'Loading…' : 'Select a date'}
+                </option>
+                {driverDays.map((day) => (
+                  <option key={day.dateKey} value={day.dateKey}>
+                    {day.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Time
+              <select
+                required
+                value={startAt}
+                disabled={!dateKey || timeSlots.length === 0}
+                onChange={(event) => setStartAt(event.target.value)}
+              >
+                <option value="">Select a time</option>
+                {timeSlots.map((slot) => (
+                  <option key={slot.startAt} value={slot.startAt}>
+                    {formatSlotTime(slot.startAt)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {!loadingSlots && driverDays.length === 0 && (
+            <p className="settings-help">
+              No open slots for this driver in the booking window.
+            </p>
+          )}
+          <button className="btn btn-block" type="submit" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Add ride'}
+          </button>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+function RideAddressFields({
+  kind,
+  form,
+  needsConfirm,
+  onFieldChange,
+}: {
+  kind: 'pickup' | 'dropoff';
+  form: AddRideForm;
+  needsConfirm: boolean;
+  onFieldChange: (field: string, value: AddRideFieldValue) => void;
+}) {
+  const isPickup = kind === 'pickup';
+  const street = isPickup ? form.pickupStreet : form.dropoffStreet;
+  const city = isPickup ? form.pickupCity : form.dropoffCity;
+  const state = isPickup ? form.pickupState : form.dropoffState;
+  const zip = isPickup ? form.pickupZip : form.dropoffZip;
+  const allowAnyway = isPickup
+    ? form.allowUnverifiedPickup
+    : form.allowUnverifiedDropoff;
+  const streetField = isPickup ? 'pickupStreet' : 'dropoffStreet';
+  const cityField = isPickup ? 'pickupCity' : 'dropoffCity';
+  const stateField = isPickup ? 'pickupState' : 'dropoffState';
+  const zipField = isPickup ? 'pickupZip' : 'dropoffZip';
+  const anywayField = isPickup
+    ? 'allowUnverifiedPickup'
+    : 'allowUnverifiedDropoff';
+  const title = isPickup ? 'From' : 'To';
+
+  return (
+    <div className="address-block">
+      <h3 className="address-block-title">{title}</h3>
+      <p className="address-block-hint">
+        Street, city, state, and ZIP — not just a place name.
+      </p>
+      <label>
+        Street
+        <input
+          required
+          autoComplete="off"
+          value={street}
+          onChange={(event) => onFieldChange(streetField, event.target.value)}
+        />
+      </label>
+      <div className="address-city-row">
+        <label>
+          City
+          <input
+            required
+            autoComplete="off"
+            value={city}
+            onChange={(event) => onFieldChange(cityField, event.target.value)}
+          />
+        </label>
+        <label>
+          State
+          <select
+            required
+            autoComplete="off"
+            value={state}
+            onChange={(event) => onFieldChange(stateField, event.target.value)}
+          >
+            {US_STATE_CODES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          ZIP
+          <input
+            required
+            inputMode="numeric"
+            autoComplete="off"
+            pattern="\d{5}(-\d{4})?"
+            title="5-digit ZIP or ZIP+4"
+            value={zip}
+            onChange={(event) => onFieldChange(zipField, event.target.value)}
+          />
+        </label>
+      </div>
+      {needsConfirm ? (
+        <label className="address-anyway">
+          <input
+            type="checkbox"
+            checked={allowAnyway}
+            onChange={(event) =>
+              onFieldChange(anywayField, event.target.checked)
+            }
+          />
+          Use this {isPickup ? 'From' : 'To'} address anyway
+        </label>
+      ) : null}
     </div>
   );
 }

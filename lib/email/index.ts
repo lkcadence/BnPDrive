@@ -48,6 +48,10 @@ function appUrl(): string {
 }
 
 export async function sendBookingConfirmation(booking: Booking): Promise<void> {
+  if (!booking.customerEmail.trim()) {
+    return;
+  }
+
   const cancelUrl = `${appUrl()}/book/cancel/${booking.cancelToken}`;
   const subject = 'Bob-n-Pam Drive — booking received';
   const text = [
@@ -77,6 +81,10 @@ export async function sendRideConfirmed(
   booking: Booking,
   driverName: string
 ): Promise<void> {
+  if (!booking.customerEmail.trim()) {
+    return;
+  }
+
   const cancelUrl = `${appUrl()}/book/cancel/${booking.cancelToken}`;
   const subject = 'Bob-n-Pam Drive — your ride is confirmed!';
   const text = [
@@ -109,6 +117,10 @@ export async function sendRideConfirmed(
  * Sent to the customer when a driver declines their ride.
  */
 export async function sendRideDeclined(booking: Booking): Promise<void> {
+  if (!booking.customerEmail.trim()) {
+    return;
+  }
+
   const bookingUrl = appUrl();
   const subject = 'Bob-n-Pam Drive — ride update';
   const text = [

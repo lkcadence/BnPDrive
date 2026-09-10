@@ -114,6 +114,21 @@ export function getOpenSlots(now: Date = new Date()): SlotDay[] {
   return days;
 }
 
+/**
+ * True when this driver still has an open slot at the given start time.
+ */
+export function isOpenSlot(
+  driverId: number,
+  startAt: string,
+  now: Date = new Date()
+): boolean {
+  return getOpenSlots(now).some((day) =>
+    day.slots.some(
+      (slot) => slot.driverId === driverId && slot.startAt === startAt
+    )
+  );
+}
+
 export function findSoonestOpenSlot(
   driverIds: number[],
   now: Date = new Date()

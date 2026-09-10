@@ -4,10 +4,14 @@
 |---|---|
 | **Purpose** | What the product is, who it serves, and how booking works |
 | **Companion doc** | [IMPLEMENTATION.md](./IMPLEMENTATION.md) — technical build details |
-| **Last updated** | 2026-09-04 |
+| **Last updated** | 2026-09-10 |
 
 ## Changelog
 
+- **2026-09-10** — Driver Rides: Add Ride after the driver-name filters; popout
+  for phone-in bookings (name, optional phone, From/To addresses, open-slot
+  date/time, driver dropdown). Saved as confirmed. Button shows even with no
+  rides (PLAN-driven).
 - **2026-09-04** — Apple Maps uses trip addresses only (no PC GPS): To pickup
   fills To; To drop-off is pickup → drop-off (PLAN-driven).
 - **2026-09-04** — Apple Maps To pickup / To drop-off pass a From origin
@@ -74,7 +78,7 @@
 ### 2. Driver board (`/driver`)
 
 - **Shared password** (one password for both drivers)
-- **Rides tab:** datagrid of bookings (sort by When, Customer, Trip, Status); filters for Pending (on), Confirmed (on), Done, Declined, and No-Show (last three off by default); **pending rows highlighted light red**; **confirmed rows highlighted light green**; payment fields; status actions in a 2x2 (Confirm/Done, No-show/Decline); tap-to-call; **To pickup** opens Apple Maps with To = pickup; **To drop-off** opens From = pickup and To = drop-off (no computer GPS); driver taps Go in Maps for spoken turns
+- **Rides tab:** datagrid of bookings (sort by When, Customer, Trip, Status); filters for Pending (on), Confirmed (on), Done, Declined, and No-Show (last three off by default); **pending rows highlighted light red**; **confirmed rows highlighted light green**; payment fields; status actions in a 2x2 (Confirm/Done, No-show/Decline); tap-to-call; **To pickup** opens Apple Maps with To = pickup; **To drop-off** opens From = pickup and To = drop-off (no computer GPS); driver taps Go in Maps for spoken turns; **Add Ride** (after the `{name}'s Rides` filters, including when the list is empty) opens the booking popout for a phone-in ride
 - **Fares tab:** per-driver completed-ride money totals
 - **Hours tab:** each driver sets their own weekly availability and days off
 - **Reports tab:** submenu for **Fares by Month** (date range; charged/received/tips by month and driver; print; Excel CSV) and **Monthly rides and destinations** (trip log by month with pickup/drop-off; print; Excel CSV)
@@ -100,6 +104,26 @@
 - The site checks the address against US records and stores a full line (better for Apple Maps)
 - If the check finds no match, the customer can still book after confirming **Use this address anyway**
 - No in-form address autocomplete
+
+### Driver Add Ride (phone-in)
+
+Drivers can add a ride for someone who calls instead of using the website.
+**Add Ride** sits after the `{name}'s Rides` checkboxes and is available even
+when there are no bookings yet.
+
+| Field | Required |
+|-------|----------|
+| Driver (dropdown; defaults to the person signed in) | Yes |
+| Name | Yes |
+| Phone | No |
+| From: street, city, state, ZIP | Yes (same address check as customer booking) |
+| To: street, city, state, ZIP | Yes (all four; same check) |
+| Date and time | Yes — **open slots only** for the chosen driver |
+
+- Saved as **Confirmed** (the driver already took the call)
+- No email, passenger count, or trip type on this form (stored as 1 passenger,
+  trip type Other, empty email; no customer email is sent)
+- That slot is held on the customer calendar like any other confirmed ride
 
 ### Trip types
 
@@ -151,8 +175,9 @@ Driver may **extend or shorten** the hold when confirming (e.g. long airport run
 
 ## Driver workflow
 
-1. See new booking as **Pending** (or ASAP urgent)
-2. **Tap phone number** to call customer
+1. See new booking as **Pending** (or ASAP urgent), or add a phone-in ride
+   with **Add Ride** (starts **Confirmed**)
+2. **Tap phone number** to call customer (hidden when the ride has no phone)
 3. **To pickup** / **To drop-off** open Apple Maps (drop-off uses pickup as From), then tap Go
 4. Mark status: **Pending → Confirmed → Done** (or **No-show**)
 5. Adjust trip block duration when confirming

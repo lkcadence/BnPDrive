@@ -4,10 +4,16 @@
 |---|---|
 | **Purpose** | How to build the product: stack, routes, data, logic, and verification |
 | **Companion doc** | [PLAN.md](./PLAN.md) — product requirements and UX rules |
-| **Last updated** | 2026-09-04 |
+| **Last updated** | 2026-09-10 |
 
 ## Changelog
 
+- **2026-09-10** — Driver Rides Add Ride: `POST /api/driver/bookings`,
+  `validateDriverBookingInput`, open-slot picker, confirmed status, no
+  customer email when the ride has no email (PLAN-driven).
+- **2026-09-09** — This host runs production `next start` on port 3100 via
+  Windows scheduled task `BnPDrive` (startup; agent asks before redeploy)
+  (IMPLEMENTATION-driven).
 - **2026-09-04** — Apple Maps uses official `source` + `destination` (no GPS);
   To drop-off is pickup → drop-off (PLAN-driven).
 - **2026-09-04** — Apple Maps links use `/directions` with `origin` +
@@ -71,7 +77,7 @@
 
 ### Driver board tabs
 
-1. **Rides** — datagrid with sortable When/Customer/Trip/Status; Show Pending / Done / Confirmed / Declined / No-Show filters; payment fields; 2x2 status actions (Confirm/Done, No-show/Decline); Apple Maps **To pickup** (`destination` only) / **To drop-off** (`source` = pickup, `destination` = drop-off)
+1. **Rides** — datagrid with sortable When/Customer/Trip/Status; Show Pending / Done / Confirmed / Declined / No-Show filters; **Add Ride** after `{name}'s Rides` (visible with an empty list); payment fields; 2x2 status actions (Confirm/Done, No-show/Decline); Apple Maps **To pickup** (`destination` only) / **To drop-off** (`source` = pickup, `destination` = drop-off)
 2. **Fares** — per-driver completed-ride money totals
 3. **Hours** — per-driver weekly schedule + day-off exceptions
 4. **Reports** — horizontal submenu: **Fares by Month**; **Monthly rides and destinations** (API + table + CSV/print)
@@ -193,6 +199,12 @@ city/state/ZIP when they differ). No match returns `address_unverified` and
 the form offers **Use this address anyway**. Census timeout/HTTP failure
 accepts the typed-in full line so bookings still go through.
 
+Driver **Add Ride** (`POST /api/driver/bookings`) uses the same address parts
+and Census check. `validateDriverBookingInput` requires name plus From/To;
+phone is optional. The ride is `confirmed`, `bookingType: slot`, `tripType:
+other`, `passengerCount: 1`, empty email. `startAt` must still be an open slot
+for that driver (`isOpenSlot`). No confirmation email is sent.
+
 USPS is not used: it needs a mailing account and is licensed for shipping,
 not ride destinations.
 
@@ -225,6 +237,8 @@ flowchart TD
 | Template | Trigger | Contents |
 |----------|---------|----------|
 | Booking confirmation | Slot or ASAP submit | “We’ll call to confirm”; cancel/change link with `cancelToken` |
+| Ride confirmed | Driver marks confirmed | Skipped when `customerEmail` is empty (phone-in rides) |
+| Ride declined | Driver marks declined | Skipped when `customerEmail` is empty |
 | ASAP alert | ASAP when driver on duty | Urgent summary for driver inbox (optional in v1) |
 
 ## Auth
@@ -259,6 +273,16 @@ flowchart TD
 | `RESEND_API_KEY` | Optional; without it, emails log to console |
 | `EMAIL_FROM` | Sender address when using Resend |
 | `DRIVER_ALERT_EMAIL` | Optional ASAP alert inbox |
+
+## Windows production host (this machine)
+
+Public URL `https://bobnpamdrive.com` is served by Cloudflared to
+`http://localhost:3100`. The app is the Windows scheduled task **BnPDrive**
+(`next start -p 3100` from `L:\BnPDrive`, starts 1 minute after boot).
+
+After application code changes, ask before rebuilding and restarting that
+task (see `.cursor/rules/rebuild-restart-windows-host.mdc`). Do not run
+`next dev` on 3100.
 
 ## Project structure (planned)
 
@@ -300,6 +324,7 @@ Before marking a feature complete:
 - [x] Driver: set weekly hours; slots reflect availability
 - [x] Driver: update Settings (name, color, window)
 - [x] Customer: pickup/drop-off require street, city, state, ZIP and verify
+- [x] Driver: Add Ride popout (name, optional phone, From/To, open slot, driver)
 - [x] Held slots disappear from public calendar
 - [x] Responsive: phone + desktop layouts
 - [ ] Browsers: manual smoke in Chromium (Edge/Chrome), Firefox, Safari

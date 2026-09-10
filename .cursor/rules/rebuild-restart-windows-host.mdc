@@ -1,0 +1,41 @@
+---
+description: Ask before rebuilding and restarting the BnPDrive Windows task
+alwaysApply: true
+---
+
+# Redeploy the Windows host only when asked
+
+This machine serves `https://bobnpamdrive.com` from the **BnPDrive**
+scheduled task (`next start -p 3100`). Code changes are not published until
+the user says so. Many edits may land before a publish.
+
+## When to ask
+
+After you finish a batch of app changes (or when the user is about to stop),
+ask once whether they want it published. Do not redeploy on every file save
+or every small follow-up in the same batch.
+
+Skip the question for docs-only, Cursor-rule-only, or comment-only edits.
+
+If they say yes, run the steps below. If they say no, leave the live site
+as-is.
+
+## Steps (only after the user confirms)
+
+```powershell
+cd L:\BnPDrive
+npx next build
+Stop-ScheduledTask -TaskName BnPDrive
+Start-ScheduledTask -TaskName BnPDrive
+```
+
+Then confirm `http://localhost:3100` returns 200.
+
+If the build fails, fix it and rebuild. Do not restart the task on a failed
+build. Do not ask the user to run these commands.
+
+## Do not
+
+- Start `next dev` on port 3100 (it conflicts with the task)
+- Leave a Cursor-owned Next.js process running on 3100
+- Redeploy without an explicit yes

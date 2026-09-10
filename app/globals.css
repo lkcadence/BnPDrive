@@ -1225,6 +1225,43 @@ button {
   font-size: 0.95rem;
 }
 
+.rides-datagrid-filters .btn {
+  width: auto;
+  min-height: 36px;
+  padding: 0.35rem 0.9rem;
+}
+
+.driver-add-ride-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem;
+  overflow: auto;
+  background: rgba(20, 32, 44, 0.45);
+}
+
+.driver-add-ride-overlay .booking-panel {
+  width: min(28rem, 100%);
+  margin: 1.5rem auto;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.driver-add-ride-datetime {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 419px) {
+  .driver-add-ride-datetime {
+    grid-template-columns: 1fr;
+  }
+}
+
 .rides-datagrid-empty {
   margin: 0 0 1rem;
   color: var(--color-muted);
