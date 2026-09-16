@@ -3,6 +3,8 @@ import { getSettings } from '@/lib/db';
 import { getOpenSlots } from '@/lib/slots';
 import { ensureDb } from '@/lib/init';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   ensureDb();
 

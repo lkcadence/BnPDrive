@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh';
-import { US_STATE_CODES } from '@/lib/address';
+import { US_STATE_CODES, splitStoredAddress } from '@/lib/address';
 import FaresByMonthReport from '@/components/reports/FaresByMonthReport';
 import MonthlyRidesDestinationsReport from '@/components/reports/MonthlyRidesDestinationsReport';
 
@@ -12,7 +12,7 @@ type ReportView = 'fares-by-month' | 'monthly-rides';
 
 type Booking = {
   id: number;
-  driverId: number;
+  driverId: number | null;
   driverName: string;
   status: string;
   bookingType: string;
@@ -22,6 +22,9 @@ type Booking = {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
   pickupAddress: string;
   dropoffAddress: string;
   passengerCount: number;
@@ -115,6 +118,64 @@ type Settings = {
   messageChangeByPhone: string;
 };
 
+function colorInputValue(value: string, fallback: string): string {
+  return /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback;
+}
+
+const SETTINGS_KEYS: (keyof Settings)[] = [
+  'businessName',
+  'bannerSubtitle',
+  'bannerColor',
+  'bookingWindowDays',
+  'calendarEventColor',
+  'messageBackgroundColor',
+  'messageBookingSuccess',
+  'messageAsapInfo',
+  'messageBookingHint',
+  'messageFooterNote',
+  'messageSlotUnavailable',
+  'messageSelectSlot',
+  'messageAsapNoDriver',
+  'messageAsapNoSlot',
+  'messageCancelSuccess',
+  'messageChangeByPhone',
+];
+
+/**
+ * True when the server echo matches what the driver just saved.
+ */
+function settingsEqual(left: Settings, right: Settings): boolean {
+  return SETTINGS_KEYS.every((key) => {
+    if (key === 'bookingWindowDays') {
+      return Number(left[key]) === Number(right[key]);
+    }
+    if (
+      key === 'bannerColor' ||
+      key === 'calendarEventColor' ||
+      key === 'messageBackgroundColor'
+    ) {
+      return String(left[key]).toLowerCase() === String(right[key]).toLowerCase();
+    }
+    return String(left[key]) === String(right[key]);
+  });
+}
+
+/**
+ * Load Settings via POST so browsers and proxies cannot reuse a GET cache.
+ */
+function fetchDriverSettings(): Promise<Response> {
+  return fetch('/api/driver/settings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    cache: 'no-store',
+    body: JSON.stringify({ read: true }),
+  });
+}
+
 const customerMessageFields: {
   key: keyof Settings;
   label: string;
@@ -138,7 +199,111 @@ type RideSortColumn = 'when' | 'customer' | 'trip' | 'status';
 type RideSortDirection = 'asc' | 'desc';
 
 function rideTripLabel(booking: Booking): string {
-  return `${booking.tripType} ${booking.pickupAddress} ${booking.dropoffAddress}`;
+  const flight = formatFlightLine(booking);
+  return [booking.tripType, booking.pickupAddress, booking.dropoffAddress, flight]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * Compact airline/flight line, or empty when the customer left it blank.
+ */
+function formatFlightLine(booking: {
+  airlineName?: string;
+  flightNumberFrom?: string;
+  flightNumberTo?: string;
+}): string {
+  const parts: string[] = [];
+  const airline = (booking.airlineName || '').trim();
+  const from = (booking.flightNumberFrom || '').trim();
+  const to = (booking.flightNumberTo || '').trim();
+  if (airline) {
+    parts.push(airline);
+  }
+  if (from) {
+    parts.push(`From ${from}`);
+  }
+  if (to) {
+    parts.push(`To ${to}`);
+  }
+  return parts.join(' · ');
+}
+
+function toDatetimeLocal(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+function RideStatusWithEdit({
+  booking,
+  onEdit,
+}: {
+  booking: Booking;
+  onEdit: (booking: Booking) => void;
+}) {
+  return (
+    <div className="ride-status-cell">
+      <span className="status-badge">{booking.status}</span>
+      <button
+        type="button"
+        className="btn btn-secondary ride-edit-btn"
+        onClick={() => onEdit(booking)}
+      >
+        Edit
+      </button>
+    </div>
+  );
+}
+
+function RideTripDetails({ booking }: { booking: Booking }) {
+  const airline = (booking.airlineName || '').trim();
+  const from = (booking.flightNumberFrom || '').trim();
+  const to = (booking.flightNumberTo || '').trim();
+  const notes = (booking.notes || '').trim();
+
+  return (
+    <>
+      {booking.tripType} · {booking.bookingType.toUpperCase()}
+      <br />
+      {booking.pickupAddress} → {booking.dropoffAddress}
+      {airline ? (
+        <>
+          <br />
+          Airline: {airline}
+        </>
+      ) : null}
+      {from ? (
+        <>
+          <br />
+          Flight Number From: {from}
+        </>
+      ) : null}
+      {to ? (
+        <>
+          <br />
+          Flight Number To: {to}
+        </>
+      ) : null}
+      <>
+        <br />
+        Passengers: {booking.passengerCount}
+      </>
+      {notes ? (
+        <>
+          <br />
+          Notes: {notes}
+        </>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -232,7 +397,12 @@ function filterRideBookings(
   showDriverIds: number[]
 ): Booking[] {
   return bookings.filter((booking) => {
-    if (showDriverIds.length > 0 && !showDriverIds.includes(booking.driverId)) {
+    // No driver boxes checked = show every driver. Checking one narrows the list.
+    if (
+      showDriverIds.length > 0 &&
+      booking.driverId !== null &&
+      !showDriverIds.includes(booking.driverId)
+    ) {
       return false;
     }
 
@@ -290,7 +460,7 @@ export default function DriverBoardPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [holdHours, setHoldHours] = useState<Record<number, number>>({});
+  const [holdHours] = useState<Record<number, number>>({});
   const [showPending, setShowPending] = useState(true);
   const [showDone, setShowDone] = useState(false);
   const [showConfirmed, setShowConfirmed] = useState(true);
@@ -302,32 +472,44 @@ export default function DriverBoardPage() {
   const [sortColumn, setSortColumn] = useState<RideSortColumn>('when');
   const [sortDirection, setSortDirection] = useState<RideSortDirection>('asc');
   const [addRideOpen, setAddRideOpen] = useState(false);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const tabRef = useRef<Tab>('rides');
   const settingsDirtyRef = useRef(false);
+  const settingsEpochRef = useRef(0);
+  const settingsRef = useRef<Settings | null>(null);
+  const lastSavedSettingsRef = useRef<Settings | null>(null);
+  const routerRef = useRef(router);
 
   tabRef.current = tab;
   settingsDirtyRef.current = settingsDirty;
+  settingsRef.current = settings;
+  routerRef.current = router;
 
   const patchSettings = useCallback((partial: Partial<Settings>) => {
     setSettings((current) => (current ? { ...current, ...partial } : current));
     setSettingsDirty(true);
   }, []);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (options?: {
+    reloadSettings?: boolean;
+    applySettings?: boolean;
+  }) => {
+    const reloadSettings =
+      options?.reloadSettings ?? tabRef.current !== 'settings';
+    const settingsEpoch = settingsEpochRef.current;
     const [ridesRes, hoursRes, settingsRes] = await Promise.all([
       fetch('/api/driver/bookings', { cache: 'no-store' }),
       fetch('/api/driver/availability', { cache: 'no-store' }),
-      fetch('/api/driver/settings', { cache: 'no-store' }),
+      reloadSettings ? fetchDriverSettings() : Promise.resolve(null),
     ]);
 
     if (ridesRes.status === 401) {
-      router.push('/driver/login');
+      routerRef.current.push('/driver/login');
       return;
     }
 
     const ridesData = await ridesRes.json();
     const hoursData = await hoursRes.json();
-    const settingsData = await settingsRes.json();
 
     setBookings(ridesData.bookings || []);
     setDriverTotals(ridesData.driverTotals || []);
@@ -336,13 +518,35 @@ export default function DriverBoardPage() {
       setDrivers(hoursData.drivers || []);
     }
 
-    if (!settingsDirtyRef.current) {
-      setSettings(settingsData.settings || null);
+    const applySettings = options?.applySettings === true
+      || tabRef.current !== 'settings';
+
+    if (
+      !reloadSettings ||
+      !settingsRes ||
+      !settingsRes.ok ||
+      settingsDirtyRef.current ||
+      !applySettings ||
+      settingsEpoch !== settingsEpochRef.current
+    ) {
+      return;
     }
-  }, [router]);
+
+    const settingsData = await settingsRes.json();
+    const incoming = settingsData.settings as Settings | undefined;
+    if (!incoming) {
+      return;
+    }
+    const lastSaved = lastSavedSettingsRef.current;
+    if (lastSaved && !settingsEqual(lastSaved, incoming)) {
+      setSettings(lastSaved);
+      return;
+    }
+    setSettings(incoming);
+  }, []);
 
   useEffect(() => {
-    loadAll();
+    void loadAll({ reloadSettings: true });
 
     // Fetch current driver identity and all drivers for ride filters
     (async () => {
@@ -367,19 +571,18 @@ export default function DriverBoardPage() {
     })();
   }, [loadAll]);
 
-  // Set default driver filters once we know the current driver
+  // Bob's Rides and Pam's Rides start unchecked.
   useEffect(() => {
-    if (currentDriverId !== null && allDrivers.length > 0
-      && Object.keys(driverFilters).length === 0) {
+    if (allDrivers.length > 0 && Object.keys(driverFilters).length === 0) {
       const defaults: Record<number, boolean> = {};
       for (const d of allDrivers) {
-        defaults[d.id] = d.id === currentDriverId;
+        defaults[d.id] = false;
       }
       setDriverFilters(defaults);
     }
-  }, [currentDriverId, allDrivers, driverFilters]);
+  }, [allDrivers, driverFilters]);
 
-  useAutoRefresh(() => loadAll());
+  useAutoRefresh(() => loadAll({ reloadSettings: false }));
 
   async function logout() {
     await fetch('/api/driver/logout', { method: 'POST' });
@@ -447,14 +650,22 @@ export default function DriverBoardPage() {
 
   async function saveSettings(event: React.FormEvent) {
     event.preventDefault();
-    if (!settings) {
+    const toSave = settingsRef.current;
+    if (!toSave) {
       return;
     }
 
-    const response = await fetch('/api/driver/settings', {
+    settingsEpochRef.current += 1;
+
+    const response = await fetch('/api/driver/settings?write=1', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+      },
+      cache: 'no-store',
+      body: JSON.stringify(toSave),
     });
 
     if (!response.ok) {
@@ -462,11 +673,21 @@ export default function DriverBoardPage() {
       return;
     }
 
-    const data = await response.json();
-    if (data.settings) {
-      setSettings(data.settings);
+    let data: { settings?: Settings } = {};
+    try {
+      data = await response.json();
+    } catch {
+      setMessage('Could not save settings. Sign in again and retry.');
+      return;
     }
 
+    if (!data.settings || !settingsEqual(toSave, data.settings)) {
+      setMessage('Settings did not save. Sign in again and retry.');
+      return;
+    }
+
+    lastSavedSettingsRef.current = data.settings;
+    setSettings(data.settings);
     setSettingsDirty(false);
     setMessage('Settings saved. Customer page updates on refresh or within 15 seconds.');
   }
@@ -478,11 +699,22 @@ export default function DriverBoardPage() {
         return;
       }
 
+      lastSavedSettingsRef.current = null;
       setSettingsDirty(false);
-      void loadAll();
+      settingsEpochRef.current += 1;
+      void loadAll({ reloadSettings: true, applySettings: true });
+      setTab(nextTab);
+      return;
     }
 
     setTab(nextTab);
+    if (nextTab === 'settings' && tab !== 'settings' && !settingsDirty) {
+      if (lastSavedSettingsRef.current) {
+        setSettings(lastSavedSettingsRef.current);
+        return;
+      }
+      void loadAll({ reloadSettings: true, applySettings: true });
+    }
   }
 
   const activeDriverIds = useMemo(
@@ -645,6 +877,19 @@ export default function DriverBoardPage() {
             />
           )}
 
+          {editingBooking && (
+            <EditRidePanel
+              booking={editingBooking}
+              drivers={allDrivers}
+              onClose={() => setEditingBooking(null)}
+              onSaved={async (successMessage) => {
+                setEditingBooking(null);
+                setMessage(successMessage);
+                await loadAll();
+              }}
+            />
+          )}
+
           {bookings.length === 0 && <p>No bookings yet.</p>}
 
           {bookings.length > 0 && sortedBookings.length === 0 && (
@@ -659,11 +904,9 @@ export default function DriverBoardPage() {
                       key={booking.id}
                       booking={booking}
                       holdHours={holdHours[booking.id] ?? 1}
-                      onHoldChange={(hours) =>
-                        setHoldHours((current) => ({ ...current, [booking.id]: hours }))
-                      }
                       onStatus={updateStatus}
                       onSaveMoney={saveMoney}
+                      onEdit={setEditingBooking}
                     />
                   ))}
                 </div>
@@ -766,11 +1009,15 @@ export default function DriverBoardPage() {
                               </a>
                             </>
                           ) : null}
+                          {booking.customerEmail.trim() ? (
+                            <>
+                              <br />
+                              {booking.customerEmail}
+                            </>
+                          ) : null}
                         </td>
                         <td data-label="Trip">
-                          {booking.tripType} · {booking.bookingType.toUpperCase()}
-                          <br />
-                          {booking.pickupAddress} → {booking.dropoffAddress}
+                          <RideTripDetails booking={booking} />
                           <RideMapsLinks
                             pickupAddress={booking.pickupAddress}
                             dropoffAddress={booking.dropoffAddress}
@@ -793,7 +1040,10 @@ export default function DriverBoardPage() {
                           </div>
                         </td>
                         <td data-label="Status">
-                          <span className="status-badge">{booking.status}</span>
+                          <RideStatusWithEdit
+                            booking={booking}
+                            onEdit={setEditingBooking}
+                          />
                         </td>
                         <td data-label="Actions">
                           <RideActions
@@ -867,7 +1117,12 @@ export default function DriverBoardPage() {
           {settingsDirty && (
             <p className="settings-help settings-help--warn">You have unsaved changes.</p>
           )}
-          <form className="form-grid" onSubmit={saveSettings}>
+          <form
+            className="form-grid"
+            action="#"
+            method="post"
+            onSubmit={saveSettings}
+          >
             <label>
               Business name
               <input
@@ -887,7 +1142,7 @@ export default function DriverBoardPage() {
               Banner color
               <input
                 type="color"
-                value={settings.bannerColor}
+                value={colorInputValue(settings.bannerColor, '#87CEEB')}
                 onChange={(event) => patchSettings({ bannerColor: event.target.value })}
               />
             </label>
@@ -895,8 +1150,10 @@ export default function DriverBoardPage() {
               Calendar event button color
               <input
                 type="color"
-                value={settings.calendarEventColor}
-                onChange={(event) => patchSettings({ calendarEventColor: event.target.value })}
+                value={colorInputValue(settings.calendarEventColor, '#1a73e8')}
+                onChange={(event) =>
+                  patchSettings({ calendarEventColor: event.target.value })
+                }
               />
             </label>
             <label>
@@ -920,7 +1177,7 @@ export default function DriverBoardPage() {
               Message background color
               <input
                 type="color"
-                value={settings.messageBackgroundColor}
+                value={colorInputValue(settings.messageBackgroundColor, '#FFF4CC')}
                 onChange={(event) =>
                   patchSettings({ messageBackgroundColor: event.target.value })
                 }
@@ -1050,6 +1307,7 @@ function RideMoneyFields({
   );
 }
 
+/* Hold hours UI — restore HoldHoursField here if needed
 function HoldHoursField({
   hours,
   onChange,
@@ -1070,10 +1328,10 @@ function HoldHoursField({
     </label>
   );
 }
+*/
 
 function RideActions({
   booking,
-  holdHours,
   onStatus,
 }: {
   booking: Booking;
@@ -1117,19 +1375,19 @@ function RideActions({
 function RideCard({
   booking,
   holdHours,
-  onHoldChange,
   onStatus,
   onSaveMoney,
+  onEdit,
 }: {
   booking: Booking;
   holdHours: number;
-  onHoldChange: (hours: number) => void;
   onStatus: (id: number, status: string, hours?: number) => void;
   onSaveMoney: (
     id: number,
     amountCharged: number | null,
     amountReceived: number | null
   ) => void;
+  onEdit: (booking: Booking) => void;
 }) {
   return (
     <div
@@ -1142,7 +1400,7 @@ function RideCard({
       }`}
     >
       <div className="ride-meta">
-        <span className="status-badge">{booking.status}</span>
+        <RideStatusWithEdit booking={booking} onEdit={onEdit} />
         <span>{booking.driverName}</span>
         <span>{new Date(booking.startAt).toLocaleString('en-US')}</span>
       </div>
@@ -1152,14 +1410,14 @@ function RideCard({
           <a href={`tel:${booking.customerPhone}`}>{booking.customerPhone}</a>
         </div>
       ) : null}
+      {booking.customerEmail.trim() ? <div>{booking.customerEmail}</div> : null}
       <div>
-        {booking.tripType} · {booking.pickupAddress} → {booking.dropoffAddress}
+        <RideTripDetails booking={booking} />
       </div>
       <RideMapsLinks
         pickupAddress={booking.pickupAddress}
         dropoffAddress={booking.dropoffAddress}
       />
-      {booking.notes && <div>Notes: {booking.notes}</div>}
       <div className="ride-payment">
         <RideMoneyFields booking={booking} onSaveMoney={onSaveMoney} />
         {/* Hold hours hidden — restore HoldHoursField here if needed
@@ -1288,7 +1546,335 @@ function DriverHoursEditor({
   );
 }
 
-type AddRideFieldValue = string | boolean;
+type AddRideFieldValue = string | number | boolean;
+
+type EditRideForm = AddRideForm & {
+  customerEmail: string;
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
+  passengerCount: number;
+  tripType: string;
+  notes: string;
+};
+
+function bookingToEditForm(booking: Booking): EditRideForm {
+  const pickup = splitStoredAddress(booking.pickupAddress);
+  const dropoff = splitStoredAddress(booking.dropoffAddress);
+  return {
+    customerName: booking.customerName,
+    customerPhone: booking.customerPhone,
+    customerEmail: booking.customerEmail,
+    airlineName: booking.airlineName || '',
+    flightNumberFrom: booking.flightNumberFrom || '',
+    flightNumberTo: booking.flightNumberTo || '',
+    pickupStreet: pickup.street,
+    pickupCity: pickup.city,
+    pickupState: pickup.state,
+    pickupZip: pickup.zip,
+    dropoffStreet: dropoff.street,
+    dropoffCity: dropoff.city,
+    dropoffState: dropoff.state,
+    dropoffZip: dropoff.zip,
+    allowUnverifiedPickup: false,
+    allowUnverifiedDropoff: false,
+    passengerCount: booking.passengerCount || 1,
+    tripType: booking.tripType || 'other',
+    notes: booking.notes || '',
+  };
+}
+
+/**
+ * Driver popout to edit an existing ride's booking details.
+ */
+function EditRidePanel({
+  booking,
+  drivers,
+  onClose,
+  onSaved,
+}: {
+  booking: Booking;
+  drivers: { id: number; firstName: string }[];
+  onClose: () => void;
+  onSaved: (message: string) => void | Promise<void>;
+}) {
+  const [form, setForm] = useState<EditRideForm>(() => bookingToEditForm(booking));
+  const [driverId, setDriverId] = useState<number | ''>(booking.driverId ?? '');
+  const [startAtLocal, setStartAtLocal] = useState(() => toDatetimeLocal(booking.startAt));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pickupNeedsConfirm, setPickupNeedsConfirm] = useState(false);
+  const [dropoffNeedsConfirm, setDropoffNeedsConfirm] = useState(false);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  function updateField(field: string, value: AddRideFieldValue) {
+    const isPickupAddress =
+      field === 'pickupStreet' ||
+      field === 'pickupCity' ||
+      field === 'pickupState' ||
+      field === 'pickupZip';
+    const isDropoffAddress =
+      field === 'dropoffStreet' ||
+      field === 'dropoffCity' ||
+      field === 'dropoffState' ||
+      field === 'dropoffZip';
+
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (isPickupAddress) {
+        next.allowUnverifiedPickup = false;
+      }
+      if (isDropoffAddress) {
+        next.allowUnverifiedDropoff = false;
+      }
+      return next;
+    });
+
+    if (isPickupAddress) {
+      setPickupNeedsConfirm(false);
+    }
+    if (isDropoffAddress) {
+      setDropoffNeedsConfirm(false);
+    }
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+
+    const payload = {
+      driverId: driverId === '' ? null : driverId,
+      startAt: startAtLocal ? new Date(startAtLocal).toISOString() : booking.startAt,
+      customerName: form.customerName,
+      customerPhone: form.customerPhone,
+      customerEmail: form.customerEmail,
+      airlineName: form.airlineName,
+      flightNumberFrom: form.flightNumberFrom,
+      flightNumberTo: form.flightNumberTo,
+      pickup: {
+        street: form.pickupStreet,
+        city: form.pickupCity,
+        state: form.pickupState,
+        zip: form.pickupZip,
+      },
+      dropoff: {
+        street: form.dropoffStreet,
+        city: form.dropoffCity,
+        state: form.dropoffState,
+        zip: form.dropoffZip,
+      },
+      passengerCount: Number(form.passengerCount),
+      tripType: form.tripType,
+      notes: form.notes,
+      allowUnverifiedPickup: form.allowUnverifiedPickup,
+      allowUnverifiedDropoff: form.allowUnverifiedDropoff,
+    };
+
+    const response = await fetch(`/api/driver/bookings/${booking.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    setSubmitting(false);
+
+    if (!response.ok) {
+      if (data.error === 'address_unverified') {
+        if (data.pickupUnverified) {
+          setPickupNeedsConfirm(true);
+        }
+        if (data.dropoffUnverified) {
+          setDropoffNeedsConfirm(true);
+        }
+      }
+      setError(data.message || data.error || 'Could not save ride.');
+      return;
+    }
+
+    await onSaved(`Ride for ${form.customerName} saved.`);
+  }
+
+  return (
+    <div
+      className="driver-add-ride-overlay"
+      onClick={onClose}
+      role="presentation"
+    >
+      <aside
+        className="booking-panel booking-panel--open"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-ride-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="booking-panel-header">
+          <h3 id="edit-ride-title" className="booking-panel-title">
+            Edit Ride
+          </h3>
+          <p className="booking-panel-subtitle">
+            Update the details for this booking
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary booking-panel-change"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        <form className="form-grid" onSubmit={handleSubmit}>
+          <label>
+            Driver
+            <select
+              value={driverId === '' ? '' : String(driverId)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setDriverId(next === '' ? '' : Number(next));
+              }}
+            >
+              <option value="">Unassigned</option>
+              {drivers.map((driver) => (
+                <option key={driver.id} value={driver.id}>
+                  {driver.firstName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Date and time
+            <input
+              required
+              type="datetime-local"
+              value={startAtLocal}
+              onChange={(event) => setStartAtLocal(event.target.value)}
+            />
+          </label>
+          <label>
+            Name
+            <input
+              required
+              autoComplete="name"
+              value={form.customerName}
+              onChange={(event) => updateField('customerName', event.target.value)}
+            />
+          </label>
+          <label>
+            Phone
+            <input
+              type="tel"
+              autoComplete="tel"
+              value={form.customerPhone}
+              onChange={(event) => updateField('customerPhone', event.target.value)}
+            />
+          </label>
+          <label>
+            Email
+            <input
+              type="email"
+              autoComplete="email"
+              value={form.customerEmail}
+              onChange={(event) => updateField('customerEmail', event.target.value)}
+            />
+          </label>
+          <div className="address-block">
+            <h3 className="address-block-title">Flight Information</h3>
+            <label>
+              Airline Name
+              <input
+                autoComplete="off"
+                value={form.airlineName}
+                onChange={(event) => updateField('airlineName', event.target.value)}
+              />
+            </label>
+            <div className="flight-number-row">
+              <label>
+                Flight Number From
+                <input
+                  autoComplete="off"
+                  value={form.flightNumberFrom}
+                  onChange={(event) =>
+                    updateField('flightNumberFrom', event.target.value)
+                  }
+                />
+              </label>
+              <label>
+                Flight Number To
+                <input
+                  autoComplete="off"
+                  value={form.flightNumberTo}
+                  onChange={(event) =>
+                    updateField('flightNumberTo', event.target.value)
+                  }
+                />
+              </label>
+            </div>
+          </div>
+          <RideAddressFields
+            kind="pickup"
+            form={form}
+            needsConfirm={pickupNeedsConfirm}
+            onFieldChange={updateField}
+          />
+          <RideAddressFields
+            kind="dropoff"
+            form={form}
+            needsConfirm={dropoffNeedsConfirm}
+            onFieldChange={updateField}
+          />
+          <label>
+            Passengers
+            <input
+              required
+              type="number"
+              min={1}
+              value={form.passengerCount}
+              onChange={(event) =>
+                updateField('passengerCount', Number(event.target.value))
+              }
+            />
+          </label>
+          <label>
+            Trip type
+            <select
+              value={form.tripType}
+              onChange={(event) => updateField('tripType', event.target.value)}
+            >
+              <option value="airport">Airport</option>
+              <option value="medical">Medical</option>
+              <option value="school">School</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>
+            Notes
+            <textarea
+              value={form.notes}
+              onChange={(event) => updateField('notes', event.target.value)}
+            />
+          </label>
+          <button className="btn btn-block" type="submit" disabled={submitting}>
+            {submitting ? 'Saving…' : 'Save ride'}
+          </button>
+        </form>
+      </aside>
+    </div>
+  );
+}
 
 function formatSlotTime(startAt: string): string {
   return new Date(startAt).toLocaleTimeString('en-US', {

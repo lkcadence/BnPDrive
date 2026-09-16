@@ -37,6 +37,7 @@ yarn-error.log*
 /data/*.db-journal
 /data/*.db-shm
 /data/*.db-wal
+/data/settings-last-write.json
 
 # typescript
 *.tsbuildinfo

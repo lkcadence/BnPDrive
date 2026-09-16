@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
   computeHoldEnd,
-  findSoonestOpenSlot,
   getOnDutyDriverIds,
 } from '@/lib/slots';
 import {
@@ -80,22 +79,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const soonest = findSoonestOpenSlot(onDuty);
-    if (!soonest) {
-      return NextResponse.json(
-        {
-          error: 'no_open_slot',
-          message: siteSettings.messageAsapNoSlot,
-        },
-        { status: 409 }
-      );
-    }
-
     const startAt = new Date();
     const holdEndAt = computeHoldEnd(startAt, form.tripType);
 
     const booking = insertBooking({
-      driverId: soonest.driverId,
+      driverId: null,
       status: 'pending',
       bookingType: 'asap',
       tripType: form.tripType,
@@ -104,6 +92,9 @@ export async function POST(request: Request) {
       customerName: form.customerName,
       customerPhone: form.customerPhone,
       customerEmail: form.customerEmail,
+      airlineName: form.airlineName,
+      flightNumberFrom: form.flightNumberFrom,
+      flightNumberTo: form.flightNumberTo,
       pickupAddress,
       dropoffAddress,
       passengerCount: form.passengerCount,
@@ -150,6 +141,9 @@ export async function POST(request: Request) {
     customerName: form.customerName,
     customerPhone: form.customerPhone,
     customerEmail: form.customerEmail,
+    airlineName: form.airlineName,
+    flightNumberFrom: form.flightNumberFrom,
+    flightNumberTo: form.flightNumberTo,
     pickupAddress,
     dropoffAddress,
     passengerCount: form.passengerCount,

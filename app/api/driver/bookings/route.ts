@@ -14,10 +14,11 @@ export async function GET() {
   ensureDb();
 
   const bookings = getAllBookings().map((booking) => {
-    const driver = getDriverById(booking.driverId);
+    const driver =
+      booking.driverId !== null ? getDriverById(booking.driverId) : null;
     return {
       ...booking,
-      driverName: driver?.firstName ?? 'Driver',
+      driverName: driver?.firstName ?? 'Unassigned',
     };
   });
 
@@ -116,6 +117,9 @@ export async function POST(request: Request) {
     customerName: form.customerName,
     customerPhone: form.customerPhone,
     customerEmail: '',
+    airlineName: '',
+    flightNumberFrom: '',
+    flightNumberTo: '',
     pickupAddress: pickupResolved.formatted,
     dropoffAddress: dropoffResolved.formatted,
     passengerCount: 1,

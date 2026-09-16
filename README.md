@@ -1,7 +1,7 @@
 # Bob-n-Pam Drive
 
-Simple ride booking for South Carolina — not Uber. Customers pick a time slot or
-request ASAP; drivers call to confirm.
+Simple ride booking for South Carolina — not Uber. Customers request an ASAP
+ride; drivers call to confirm. (The public slot calendar is hidden for now.)
 
 ## Quick start
 

@@ -1,4 +1,4 @@
-import type { Booking } from '@/lib/db';
+import { formatFlightInfo, type Booking } from '@/lib/db';
 
 type EmailPayload = {
   to: string;
@@ -47,6 +47,14 @@ function appUrl(): string {
   return process.env.APP_URL || 'http://localhost:3001';
 }
 
+/**
+ * Extra email line when the customer gave airline or flight numbers.
+ */
+function flightLines(booking: Booking): string[] {
+  const flight = formatFlightInfo(booking);
+  return flight ? [`Flight: ${flight}`] : [];
+}
+
 export async function sendBookingConfirmation(booking: Booking): Promise<void> {
   if (!booking.customerEmail.trim()) {
     return;
@@ -61,6 +69,7 @@ export async function sendBookingConfirmation(booking: Booking): Promise<void> {
     '',
     `Pickup: ${booking.pickupAddress}`,
     `Drop-off: ${booking.dropoffAddress}`,
+    ...flightLines(booking),
     `Start: ${new Date(booking.startAt).toLocaleString('en-US')}`,
     '',
     `Change or cancel: ${cancelUrl}`,
@@ -95,6 +104,7 @@ export async function sendRideConfirmed(
     `When: ${new Date(booking.startAt).toLocaleString('en-US')}`,
     `Pickup: ${booking.pickupAddress}`,
     `Drop-off: ${booking.dropoffAddress}`,
+    ...flightLines(booking),
     '',
     `${driverName} will be your driver. If anything changes, ` +
       'please call us or use the link below.',
@@ -162,6 +172,7 @@ export async function sendAsapAlert(booking: Booking): Promise<void> {
     `${booking.customerName} — ${booking.customerPhone}`,
     `Pickup: ${booking.pickupAddress}`,
     `Drop-off: ${booking.dropoffAddress}`,
+    ...flightLines(booking),
     `Notes: ${booking.notes || 'None'}`,
   ].join('\n');
 

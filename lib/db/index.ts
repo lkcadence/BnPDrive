@@ -31,6 +31,13 @@ const DEFAULT_SUBTITLE =
   'Friendly rides across South Carolina — mostly airport runs, plus medical, ' +
   'school, and local trips. Schedule ahead or book same-day.';
 
+/**
+ * Keep stored text as-is, including empty. Only missing/null use fallback.
+ */
+function storedText(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
 export const DEFAULT_CALENDAR_EVENT_COLOR = '#1a73e8';
 
 function columnExists(database: Database.Database, table: string, column: string): boolean {
@@ -51,6 +58,110 @@ function addSettingsTextColumn(
   database
     .prepare(`UPDATE settings SET ${column} = @value WHERE ${column} = ''`)
     .run({ value: defaultValue });
+}
+
+/**
+ * Replace a settings string only when it still matches a previous default.
+ */
+function replaceSettingsTextIfMatch(
+  database: Database.Database,
+  column: string,
+  previous: string,
+  next: string
+): void {
+  if (!columnExists(database, 'settings', column) || previous === next) {
+    return;
+  }
+
+  database
+    .prepare(`UPDATE settings SET ${column} = @next WHERE ${column} = @previous`)
+    .run({ previous, next });
+}
+
+/**
+ * Add a text column on bookings when an older database is missing it.
+ */
+function addBookingsTextColumn(
+  database: Database.Database,
+  column: string
+): void {
+  if (columnExists(database, 'bookings', column)) {
+    return;
+  }
+
+  database.exec(
+    `ALTER TABLE bookings ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`
+  );
+}
+
+/**
+ * Let ASAP bookings store no assigned driver. Existing rows keep their driver.
+ */
+function allowNullableBookingDriver(database: Database.Database): void {
+  const columns = database.prepare('PRAGMA table_info(bookings)').all() as {
+    name: string;
+    notnull: number;
+  }[];
+  const driverCol = columns.find((column) => column.name === 'driver_id');
+  if (!driverCol || driverCol.notnull === 0) {
+    return;
+  }
+
+  database.pragma('foreign_keys = OFF');
+  database.exec(`
+    CREATE TABLE bookings__driver_optional (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      driver_id INTEGER REFERENCES drivers(id),
+      status TEXT NOT NULL CHECK (status IN (
+        'pending', 'confirmed', 'done', 'no_show', 'cancelled', 'declined'
+      )),
+      booking_type TEXT NOT NULL CHECK (booking_type IN ('slot', 'asap')),
+      trip_type TEXT NOT NULL CHECK (trip_type IN (
+        'airport', 'medical', 'school', 'other'
+      )),
+      start_at TEXT NOT NULL,
+      hold_end_at TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      customer_email TEXT NOT NULL,
+      airline_name TEXT NOT NULL DEFAULT '',
+      flight_number_from TEXT NOT NULL DEFAULT '',
+      flight_number_to TEXT NOT NULL DEFAULT '',
+      pickup_address TEXT NOT NULL,
+      dropoff_address TEXT NOT NULL,
+      passenger_count INTEGER NOT NULL,
+      notes TEXT,
+      cancel_token TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      amount_charged REAL,
+      amount_received REAL
+    );
+
+    INSERT INTO bookings__driver_optional (
+      id, driver_id, status, booking_type, trip_type, start_at, hold_end_at,
+      customer_name, customer_phone, customer_email, airline_name,
+      flight_number_from, flight_number_to, pickup_address, dropoff_address,
+      passenger_count, notes, cancel_token, created_at, updated_at,
+      amount_charged, amount_received
+    )
+    SELECT
+      id, driver_id, status, booking_type, trip_type, start_at, hold_end_at,
+      customer_name, customer_phone, customer_email, airline_name,
+      flight_number_from, flight_number_to, pickup_address, dropoff_address,
+      passenger_count, notes, cancel_token, created_at, updated_at,
+      amount_charged, amount_received
+    FROM bookings;
+
+    DROP TABLE bookings;
+    ALTER TABLE bookings__driver_optional RENAME TO bookings;
+
+    CREATE INDEX IF NOT EXISTS idx_bookings_driver_status
+      ON bookings(driver_id, status);
+    CREATE INDEX IF NOT EXISTS idx_bookings_hold
+      ON bookings(start_at, hold_end_at);
+  `);
+  database.pragma('foreign_keys = ON');
 }
 
 function migrateSchema(database: Database.Database): void {
@@ -122,6 +233,26 @@ function migrateSchema(database: Database.Database): void {
     DEFAULT_CALENDAR_EVENT_COLOR
   );
 
+  replaceSettingsTextIfMatch(
+    database,
+    'message_asap_info',
+    'ASAP sends an urgent request to whoever is on duty. If no one is available, ' +
+      'we\u2019ll ask you to pick a later slot or call us.',
+    DEFAULT_CUSTOMER_MESSAGES.messageAsapInfo
+  );
+  replaceSettingsTextIfMatch(
+    database,
+    'message_asap_no_driver',
+    'No driver is on duty right now. Please pick a later slot or call us.',
+    DEFAULT_CUSTOMER_MESSAGES.messageAsapNoDriver
+  );
+  replaceSettingsTextIfMatch(
+    database,
+    'message_asap_no_slot',
+    'No open slots are available soon. Please pick a later time or call us.',
+    DEFAULT_CUSTOMER_MESSAGES.messageAsapNoSlot
+  );
+
   if (!columnExists(database, 'bookings', 'amount_charged')) {
     database.exec('ALTER TABLE bookings ADD COLUMN amount_charged REAL');
   }
@@ -129,6 +260,11 @@ function migrateSchema(database: Database.Database): void {
   if (!columnExists(database, 'bookings', 'amount_received')) {
     database.exec('ALTER TABLE bookings ADD COLUMN amount_received REAL');
   }
+
+  addBookingsTextColumn(database, 'airline_name');
+  addBookingsTextColumn(database, 'flight_number_from');
+  addBookingsTextColumn(database, 'flight_number_to');
+  allowNullableBookingDriver(database);
 }
 
 function initSchema(database: Database.Database): void {
@@ -157,7 +293,7 @@ function initSchema(database: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS bookings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      driver_id INTEGER NOT NULL REFERENCES drivers(id),
+      driver_id INTEGER REFERENCES drivers(id),
       status TEXT NOT NULL CHECK (status IN (
         'pending', 'confirmed', 'done', 'no_show', 'cancelled', 'declined'
       )),
@@ -168,6 +304,9 @@ function initSchema(database: Database.Database): void {
       customer_name TEXT NOT NULL,
       customer_phone TEXT NOT NULL,
       customer_email TEXT NOT NULL,
+      airline_name TEXT NOT NULL DEFAULT '',
+      flight_number_from TEXT NOT NULL DEFAULT '',
+      flight_number_to TEXT NOT NULL DEFAULT '',
       pickup_address TEXT NOT NULL,
       dropoff_address TEXT NOT NULL,
       passenger_count INTEGER NOT NULL,
@@ -213,7 +352,7 @@ export type TripType = 'airport' | 'medical' | 'school' | 'other';
 
 export type Booking = {
   id: number;
-  driverId: number;
+  driverId: number | null;
   status: BookingStatus;
   bookingType: BookingType;
   tripType: TripType;
@@ -222,6 +361,9 @@ export type Booking = {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
   pickupAddress: string;
   dropoffAddress: string;
   passengerCount: number;
@@ -314,7 +456,7 @@ function mapDriver(row: Record<string, unknown>): Driver {
 function mapBooking(row: Record<string, unknown>): Booking {
   return {
     id: row.id as number,
-    driverId: row.driver_id as number,
+    driverId: (row.driver_id as number | null) ?? null,
     status: row.status as BookingStatus,
     bookingType: row.booking_type as BookingType,
     tripType: row.trip_type as TripType,
@@ -323,6 +465,9 @@ function mapBooking(row: Record<string, unknown>): Booking {
     customerName: row.customer_name as string,
     customerPhone: row.customer_phone as string,
     customerEmail: row.customer_email as string,
+    airlineName: (row.airline_name as string) || '',
+    flightNumberFrom: (row.flight_number_from as string) || '',
+    flightNumberTo: (row.flight_number_to as string) || '',
     pickupAddress: row.pickup_address as string,
     dropoffAddress: row.dropoff_address as string,
     passengerCount: row.passenger_count as number,
@@ -333,6 +478,27 @@ function mapBooking(row: Record<string, unknown>): Booking {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
+}
+
+/**
+ * Compact airline/flight line for the driver board and emails, or empty.
+ */
+export function formatFlightInfo(booking: {
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
+}): string {
+  const parts: string[] = [];
+  if (booking.airlineName.trim()) {
+    parts.push(booking.airlineName.trim());
+  }
+  if (booking.flightNumberFrom.trim()) {
+    parts.push(`From ${booking.flightNumberFrom.trim()}`);
+  }
+  if (booking.flightNumberTo.trim()) {
+    parts.push(`To ${booking.flightNumberTo.trim()}`);
+  }
+  return parts.join(' · ');
 }
 
 export function getSettings(): Settings {
@@ -353,38 +519,58 @@ export function getSettings(): Settings {
   }
 
   return {
-    businessName: row.business_name as string,
-    bannerSubtitle: (row.banner_subtitle as string) || DEFAULT_SUBTITLE,
-    bannerColor: row.banner_color as string,
-    bookingWindowDays: row.booking_window_days as number,
+    businessName: storedText(row.business_name, 'Bob-n-Pam Drive'),
+    bannerSubtitle: storedText(row.banner_subtitle, ''),
+    bannerColor: storedText(row.banner_color, '#87CEEB'),
+    bookingWindowDays: Math.max(
+      1,
+      Math.floor(Number(row.booking_window_days) || 14)
+    ),
     calendarEventColor:
-      (row.calendar_event_color as string) || DEFAULT_CALENDAR_EVENT_COLOR,
+      storedText(row.calendar_event_color, '') || DEFAULT_CALENDAR_EVENT_COLOR,
     messageBackgroundColor:
-      (row.message_background_color as string) ||
+      storedText(row.message_background_color, '') ||
       DEFAULT_CUSTOMER_MESSAGES.messageBackgroundColor,
-    messageBookingSuccess:
-      (row.message_booking_success as string) ||
-      DEFAULT_CUSTOMER_MESSAGES.messageBookingSuccess,
-    messageAsapInfo:
-      (row.message_asap_info as string) || DEFAULT_CUSTOMER_MESSAGES.messageAsapInfo,
-    messageBookingHint:
-      (row.message_booking_hint as string) || DEFAULT_CUSTOMER_MESSAGES.messageBookingHint,
-    messageFooterNote:
-      (row.message_footer_note as string) || DEFAULT_CUSTOMER_MESSAGES.messageFooterNote,
-    messageSlotUnavailable:
-      (row.message_slot_unavailable as string) ||
-      DEFAULT_CUSTOMER_MESSAGES.messageSlotUnavailable,
-    messageSelectSlot:
-      (row.message_select_slot as string) || DEFAULT_CUSTOMER_MESSAGES.messageSelectSlot,
-    messageAsapNoDriver:
-      (row.message_asap_no_driver as string) || DEFAULT_CUSTOMER_MESSAGES.messageAsapNoDriver,
-    messageAsapNoSlot:
-      (row.message_asap_no_slot as string) || DEFAULT_CUSTOMER_MESSAGES.messageAsapNoSlot,
-    messageCancelSuccess:
-      (row.message_cancel_success as string) || DEFAULT_CUSTOMER_MESSAGES.messageCancelSuccess,
-    messageChangeByPhone:
-      (row.message_change_by_phone as string) ||
-      DEFAULT_CUSTOMER_MESSAGES.messageChangeByPhone,
+    messageBookingSuccess: storedText(
+      row.message_booking_success,
+      DEFAULT_CUSTOMER_MESSAGES.messageBookingSuccess
+    ),
+    messageAsapInfo: storedText(
+      row.message_asap_info,
+      DEFAULT_CUSTOMER_MESSAGES.messageAsapInfo
+    ),
+    messageBookingHint: storedText(
+      row.message_booking_hint,
+      DEFAULT_CUSTOMER_MESSAGES.messageBookingHint
+    ),
+    messageFooterNote: storedText(
+      row.message_footer_note,
+      DEFAULT_CUSTOMER_MESSAGES.messageFooterNote
+    ),
+    messageSlotUnavailable: storedText(
+      row.message_slot_unavailable,
+      DEFAULT_CUSTOMER_MESSAGES.messageSlotUnavailable
+    ),
+    messageSelectSlot: storedText(
+      row.message_select_slot,
+      DEFAULT_CUSTOMER_MESSAGES.messageSelectSlot
+    ),
+    messageAsapNoDriver: storedText(
+      row.message_asap_no_driver,
+      DEFAULT_CUSTOMER_MESSAGES.messageAsapNoDriver
+    ),
+    messageAsapNoSlot: storedText(
+      row.message_asap_no_slot,
+      DEFAULT_CUSTOMER_MESSAGES.messageAsapNoSlot
+    ),
+    messageCancelSuccess: storedText(
+      row.message_cancel_success,
+      DEFAULT_CUSTOMER_MESSAGES.messageCancelSuccess
+    ),
+    messageChangeByPhone: storedText(
+      row.message_change_by_phone,
+      DEFAULT_CUSTOMER_MESSAGES.messageChangeByPhone
+    ),
   };
 }
 
@@ -448,7 +634,8 @@ export function updateSettings(settings: Partial<Settings>): Settings {
       messageChangeByPhone: next.messageChangeByPhone,
     });
 
-  return next;
+  database.pragma('wal_checkpoint(PASSIVE)');
+  return getSettings();
 }
 
 export function getDrivers(): Driver[] {
@@ -598,12 +785,14 @@ export function insertBooking(
     .prepare(
       `INSERT INTO bookings (
         driver_id, status, booking_type, trip_type, start_at, hold_end_at,
-        customer_name, customer_phone, customer_email, pickup_address,
-        dropoff_address, passenger_count, notes, cancel_token, created_at, updated_at
+        customer_name, customer_phone, customer_email, airline_name,
+        flight_number_from, flight_number_to, pickup_address, dropoff_address,
+        passenger_count, notes, cancel_token, created_at, updated_at
       ) VALUES (
         @driverId, @status, @bookingType, @tripType, @startAt, @holdEndAt,
-        @customerName, @customerPhone, @customerEmail, @pickupAddress,
-        @dropoffAddress, @passengerCount, @notes, @cancelToken, @createdAt, @updatedAt
+        @customerName, @customerPhone, @customerEmail, @airlineName,
+        @flightNumberFrom, @flightNumberTo, @pickupAddress, @dropoffAddress,
+        @passengerCount, @notes, @cancelToken, @createdAt, @updatedAt
       )`
     )
     .run({
@@ -633,6 +822,16 @@ export function updateBooking(
       | 'notes'
       | 'amountCharged'
       | 'amountReceived'
+      | 'driverId'
+      | 'customerName'
+      | 'customerPhone'
+      | 'customerEmail'
+      | 'airlineName'
+      | 'flightNumberFrom'
+      | 'flightNumberTo'
+      | 'pickupAddress'
+      | 'dropoffAddress'
+      | 'passengerCount'
     >
   >
 ): Booking | null {
@@ -652,6 +851,16 @@ export function updateBooking(
       fields.amountCharged !== undefined ? fields.amountCharged : existing.amountCharged,
     amountReceived:
       fields.amountReceived !== undefined ? fields.amountReceived : existing.amountReceived,
+    driverId: fields.driverId !== undefined ? fields.driverId : existing.driverId,
+    customerName: fields.customerName ?? existing.customerName,
+    customerPhone: fields.customerPhone ?? existing.customerPhone,
+    customerEmail: fields.customerEmail ?? existing.customerEmail,
+    airlineName: fields.airlineName ?? existing.airlineName,
+    flightNumberFrom: fields.flightNumberFrom ?? existing.flightNumberFrom,
+    flightNumberTo: fields.flightNumberTo ?? existing.flightNumberTo,
+    pickupAddress: fields.pickupAddress ?? existing.pickupAddress,
+    dropoffAddress: fields.dropoffAddress ?? existing.dropoffAddress,
+    passengerCount: fields.passengerCount ?? existing.passengerCount,
     updatedAt: new Date().toISOString(),
   };
 
@@ -665,6 +874,16 @@ export function updateBooking(
         notes = @notes,
         amount_charged = @amountCharged,
         amount_received = @amountReceived,
+        driver_id = @driverId,
+        customer_name = @customerName,
+        customer_phone = @customerPhone,
+        customer_email = @customerEmail,
+        airline_name = @airlineName,
+        flight_number_from = @flightNumberFrom,
+        flight_number_to = @flightNumberTo,
+        pickup_address = @pickupAddress,
+        dropoff_address = @dropoffAddress,
+        passenger_count = @passengerCount,
         updated_at = @updatedAt
        WHERE id = @id`
     )

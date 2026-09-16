@@ -4,10 +4,49 @@
 |---|---|
 | **Purpose** | How to build the product: stack, routes, data, logic, and verification |
 | **Companion doc** | [PLAN.md](./PLAN.md) — product requirements and UX rules |
-| **Last updated** | 2026-09-10 |
+| **Last updated** | 2026-09-15 |
 
 ## Changelog
 
+- **2026-09-15** — Driver name filters only apply when at least one `{name}'s
+  Rides` box is checked; both off lists all drivers for the active status
+  filters (PLAN-driven).
+- **2026-09-15** — Driver Rides default filters leave Bob and Pam unchecked;
+  assigned rides stay hidden until that driver’s box is checked (PLAN-driven).
+- **2026-09-15** — Driver Rides default filters leave Bob unchecked and check
+  other drivers (PLAN-driven).
+- **2026-09-15** — Customer ASAP submit label is “Click here to request your
+  ride”. ASAP `driver_id` may be null; board shows Unassigned and lists those
+  rides for every driver filter (PLAN-driven).
+- **2026-09-15** — Customer page no longer substitutes default ASAP / hint /
+  footer copy when Settings stores an empty string; those notices are omitted
+  when blank (PLAN-driven).
+- **2026-09-15** — `getSettings()` keeps empty strings (does not substitute
+  defaults). Customer banner omits subtitle when blank (PLAN-driven).
+- **2026-09-14** — Settings reads use POST; Save succeeds only when the
+  server echo matches; a verified save is not replaced when reopening the
+  tab (PLAN-driven).
+- **2026-09-14** — Settings form ignores GET while the tab is open after Save;
+  PUT does not replace the form with a cached response (PLAN-driven).
+- **2026-09-14** — Driver board auto-refresh no longer reloads Settings; PUT
+  `/api/driver/settings` re-reads SQLite after write so Save cannot be
+  overwritten by a stale GET (PLAN-driven).
+- **2026-09-14** — Driver `PATCH /api/driver/bookings/[id]` can update ride
+  details (not only status/payment). Customer `/` and `/api/slots` refresh
+  Settings on load; auto-refresh runs immediately (PLAN-driven).
+- **2026-09-14** — Publish must kill leftover `next start` on 3100; Stop-ScheduledTask
+  alone can leave the old process running (IMPLEMENTATION-driven).
+- **2026-09-14** — Bookings store `airlineName`, `flightNumberFrom`,
+  `flightNumberTo`; customer form + driver Rides + emails (PLAN-driven).
+- **2026-09-14** — ASAP panel omits the “we’ll call as soon as we can”
+  subtitle (PLAN-driven).
+- **2026-09-14** — ASAP panel title is “Please enter your ride details”
+  (PLAN-driven).
+- **2026-09-14** — `SHOW_CUSTOMER_SLOT_BOOKING` hides the customer calendar and
+  mode buttons; `/` defaults to the ASAP form. ASAP copy no longer tells
+  customers to pick a slot (PLAN-driven).
+- **2026-09-12** — Favicon: `public/bobnpam-favicon.svg` via root layout
+  `metadata.icons` (PLAN-driven).
 - **2026-09-10** — Driver Rides Add Ride: `POST /api/driver/bookings`,
   `validateDriverBookingInput`, open-slot picker, confirmed status, no
   customer email when the ride has no email (PLAN-driven).
@@ -67,17 +106,23 @@
 - Semicolons required
 - Max line length: 100 characters
 
+### Static assets
+
+| File | URL | Used by |
+|------|-----|---------|
+| `public/bobnpam-favicon.svg` | `/bobnpam-favicon.svg` | Root layout `metadata.icons` (browser tab) |
+
 ## Routes
 
 | Route | Access | Purpose |
 |-------|--------|---------|
-| `/` | Public | Customer page: banner, slots, ASAP, booking form |
+| `/` | Public | Customer page: banner + ASAP booking form (calendar and mode buttons hidden) |
 | `/book/cancel/[token]` | Public (token) | Customer change/cancel via email link |
 | `/driver` | Password | Driver board: Rides, Fares, Hours, Reports, Settings |
 
 ### Driver board tabs
 
-1. **Rides** — datagrid with sortable When/Customer/Trip/Status; Show Pending / Done / Confirmed / Declined / No-Show filters; **Add Ride** after `{name}'s Rides` (visible with an empty list); payment fields; 2x2 status actions (Confirm/Done, No-show/Decline); Apple Maps **To pickup** (`destination` only) / **To drop-off** (`source` = pickup, `destination` = drop-off)
+1. **Rides** — datagrid with sortable When/Customer/Trip/Status; Show Pending / Done / Confirmed / Declined / No-Show filters; `{name}'s Rides` (Bob and Pam off; both off does not hide assigned rides); **Add Ride** after those checkboxes (visible with an empty list); **Edit** under Status; rows show email, flight fields, passengers, notes; payment fields; 2x2 status actions (Confirm/Done, No-show/Decline); Apple Maps **To pickup** (`destination` only) / **To drop-off** (`source` = pickup, `destination` = drop-off); `PATCH /api/driver/bookings/[id]` updates status, payment, or full ride details
 2. **Fares** — per-driver completed-ride money totals
 3. **Hours** — per-driver weekly schedule + day-off exceptions
 4. **Reports** — horizontal submenu: **Fares by Month**; **Monthly rides and destinations** (API + table + CSV/print)
@@ -125,7 +170,7 @@
 | Field | Type | Notes |
 |-------|------|-------|
 | id | PK | |
-| driverId | FK | Assigned driver |
+| driverId | FK, nullable | Assigned driver; null until the board picks one (ASAP) |
 | status | enum | `pending`, `confirmed`, `done`, `no_show`, `cancelled`, `declined` |
 | bookingType | enum | `slot`, `asap` |
 | tripType | enum | `airport`, `medical`, `school`, `other` |
@@ -134,6 +179,9 @@
 | customerName | string | |
 | customerPhone | string | |
 | customerEmail | string | |
+| airlineName | string | Optional; empty when not given |
+| flightNumberFrom | string | Optional inbound flight number |
+| flightNumberTo | string | Optional outbound flight number |
 | pickupAddress | string | Formatted `street, city, ST ZIP` (verified or confirmed anyway) |
 | dropoffAddress | string | Formatted `street, city, ST ZIP` (verified or confirmed anyway) |
 | passengerCount | int | |
@@ -149,21 +197,27 @@
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | businessName | string | Bob-n-Pam Drive | Banner text |
-| bannerSubtitle | string | (default tagline) | Subtitle under banner |
+| bannerSubtitle | string | (may be empty) | Subtitle under banner; omitted on customer page when blank |
 | bannerColor | string | sky blue hex | Configurable |
 | bookingWindowDays | int | 14 | How far ahead slots show |
 | calendarEventColor | string | `#1a73e8` | Open slot buttons on customer week grid |
 | messageBackgroundColor | string | `#FFF4CC` | Highlight behind customer notices |
 | messageBookingSuccess | string | (default) | After successful booking |
-| messageAsapInfo | string | (default) | ASAP mode explanation |
-| messageBookingHint | string | (default) | Calendar hint before slot pick |
-| messageFooterNote | string | (default) | Footer payment note |
+| messageAsapInfo | string | (may be empty) | ASAP explanation; omitted on customer page when blank |
+| messageBookingHint | string | (may be empty) | Calendar hint before slot pick; omitted when blank |
+| messageFooterNote | string | (may be empty) | Footer payment note; omitted when blank |
 | messageSlotUnavailable | string | (default) | Selected slot taken |
 | messageSelectSlot | string | (default) | Validation: pick a slot |
 | messageAsapNoDriver | string | (default) | ASAP API: no driver on duty |
 | messageAsapNoSlot | string | (default) | ASAP API: no open slots |
 | messageCancelSuccess | string | (default) | Cancel page confirmation |
 | messageChangeByPhone | string | (default) | Cancel page change instructions |
+
+`PUT /api/driver/settings` writes the row, logs `data/settings-last-write.json`,
+and returns `getSettings()`. `POST /api/driver/settings` returns the current
+row (used instead of GET so the value cannot come from an HTTP GET cache).
+Save on the driver board succeeds only when that echo matches the form.
+A verified save is kept when leaving and returning to Settings.
 
 ## Slot generation
 
@@ -212,34 +266,34 @@ not ride destinations.
 
 ```mermaid
 flowchart TD
-  customer[Customer] --> choose{Slot or ASAP}
-  choose -->|Slot| pickSlot[Pick labeled driver slot]
-  choose -->|ASAP| asap[Create urgent request]
-  pickSlot --> hold[Hold 3h airport or 1h other]
+  customer[Customer] --> asap[ASAP form]
   asap --> onDuty{Driver on duty?}
-  onDuty -->|Yes| holdSoonest[Hold soonest slot]
-  onDuty -->|No| noDuty[Show pick a slot or call]
-  hold --> email[Confirm email with cancel link]
-  holdSoonest --> email
+  onDuty -->|Yes| unassigned[Create unassigned pending]
+  onDuty -->|No| noDuty[Show call us]
+  unassigned --> email[Confirm email with cancel link]
   email --> driverCall[Driver calls and marks status]
   driverCall --> adjust[Adjust block length]
 ```
 
+Customer slot picking is gated by `SHOW_CUSTOMER_SLOT_BOOKING` in
+`CustomerBookingPage` (currently `false`). Slot UI and APIs stay in the codebase.
+
 1. Customer submits ASAP form (same fields as slot booking; no slot pick)
 2. Create booking with `bookingType: asap`, status `pending`
 3. Determine **on-duty drivers** (current time within availability, no exception)
-4. If none on duty → return UI message: pick a slot or call
-5. If on duty → both see urgent flag on driver board; assign/hold **sooner next open slot** among on-duty drivers
+4. If none on duty → return UI message: call us
+5. If on duty → create pending ASAP with no `driverId`; both see urgent
+   Unassigned on the driver board (no calendar hold until a driver is picked)
 6. Send confirmation email + optional ASAP alert email to driver inbox (TBD)
 
 ## Email templates
 
 | Template | Trigger | Contents |
 |----------|---------|----------|
-| Booking confirmation | Slot or ASAP submit | “We’ll call to confirm”; cancel/change link with `cancelToken` |
-| Ride confirmed | Driver marks confirmed | Skipped when `customerEmail` is empty (phone-in rides) |
+| Booking confirmation | Slot or ASAP submit | “We’ll call to confirm”; pickup/drop-off; flight info when given; cancel/change link with `cancelToken` |
+| Ride confirmed | Driver marks confirmed | Skipped when `customerEmail` is empty (phone-in rides); includes flight info when given |
 | Ride declined | Driver marks declined | Skipped when `customerEmail` is empty |
-| ASAP alert | ASAP when driver on duty | Urgent summary for driver inbox (optional in v1) |
+| ASAP alert | ASAP when driver on duty | Urgent summary for driver inbox (optional in v1); includes flight info when given |
 
 ## Auth
 
@@ -249,10 +303,10 @@ flowchart TD
 
 ## Responsive implementation
 
-| Breakpoint | Customer calendar | Driver board |
-|------------|-------------------|--------------|
-| Mobile | Agenda/day slot list; **booking form panel above calendar** when slot selected | Stacked ride cards; large tap targets |
-| Desktop (≥768px) | Week grid with **month/year header**; **sticky side panel** with form when slot selected | Table or two-column list + detail |
+| Breakpoint | Customer page | Driver board |
+|------------|---------------|--------------|
+| Mobile | ASAP form (calendar hidden); when `SHOW_CUSTOMER_SLOT_BOOKING` is on: agenda list + form above calendar | Stacked ride cards; large tap targets |
+| Desktop (≥768px) | ASAP form (calendar hidden); when flag is on: week grid + sticky side panel | Table or two-column list + detail |
 
 - Test at phone width (~375px) and desktop (~1280px)
 - No hover-only interactions
@@ -281,7 +335,9 @@ Public URL `https://bobnpamdrive.com` is served by Cloudflared to
 (`next start -p 3100` from `L:\BnPDrive`, starts 1 minute after boot).
 
 After application code changes, ask before rebuilding and restarting that
-task (see `.cursor/rules/rebuild-restart-windows-host.mdc`). Do not run
+task (see `.cursor/rules/rebuild-restart-windows-host.mdc`). After
+`Stop-ScheduledTask`, kill any process still listening on 3100, then start
+the task — otherwise the old `next start` keeps serving. Do not run
 `next dev` on 3100.
 
 ## Project structure (planned)
@@ -289,7 +345,7 @@ task (see `.cursor/rules/rebuild-restart-windows-host.mdc`). Do not run
 ```text
 BnPDrive/
   app/
-    page.tsx                    # Customer booking
+    page.tsx                    # Customer booking (ASAP form)
     driver/page.tsx             # Driver board (Rides, Hours, Settings)
     driver/login/page.tsx
     book/cancel/[token]/page.tsx
@@ -297,6 +353,8 @@ BnPDrive/
     api/bookings/route.ts
     api/bookings/cancel/[token]/route.ts
     api/driver/login|logout|bookings|availability|settings/
+  components/
+    CustomerBookingPage.tsx     # SHOW_CUSTOMER_SLOT_BOOKING hides calendar/buttons
   lib/
     hooks/useAutoRefresh.ts   # 15s polling while tab visible + refresh on focus
     db/index.ts                 # SQLite schema + queries
@@ -316,7 +374,7 @@ BnPDrive/
 
 Before marking a feature complete:
 
-- [x] Customer: pick slot, submit form, see confirmation message
+- [x] Customer: ASAP form by default; calendar and mode buttons hidden
 - [x] Customer: ASAP when driver on duty / not on duty
 - [x] Customer: cancel via email token link
 - [x] Driver: login, view rides, tap-to-call, change status, adjust duration

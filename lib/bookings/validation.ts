@@ -9,10 +9,20 @@ export function createCancelToken(): string {
   return randomBytes(24).toString('hex');
 }
 
+/**
+ * Trim a string field; missing or non-string values become empty.
+ */
+function optionalTrimmed(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export type BookingFormInput = {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
   pickupParts: AddressParts;
   dropoffParts: AddressParts;
   pickupAddress: string;
@@ -41,6 +51,28 @@ export type DriverBookingFormInput = {
 
 export type ValidateDriverBookingResult =
   | { ok: true; form: DriverBookingFormInput }
+  | { ok: false; message: string };
+
+export type DriverRideEditInput = {
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
+  pickupParts: AddressParts;
+  dropoffParts: AddressParts;
+  passengerCount: number;
+  tripType: 'airport' | 'medical' | 'school' | 'other';
+  notes: string;
+  allowUnverifiedPickup: boolean;
+  allowUnverifiedDropoff: boolean;
+  driverId: number | null;
+  startAt: string | null;
+};
+
+export type ValidateDriverRideEditResult =
+  | { ok: true; form: DriverRideEditInput }
   | { ok: false; message: string };
 
 /**
@@ -100,6 +132,9 @@ export function validateBookingInput(body: unknown): ValidateBookingResult {
       customerName: data.customerName.trim(),
       customerPhone: data.customerPhone.trim(),
       customerEmail: data.customerEmail.trim(),
+      airlineName: optionalTrimmed(data.airlineName),
+      flightNumberFrom: optionalTrimmed(data.flightNumberFrom),
+      flightNumberTo: optionalTrimmed(data.flightNumberTo),
       pickupParts,
       dropoffParts,
       pickupAddress: formatAddress(pickupParts),
@@ -164,6 +199,85 @@ export function validateDriverBookingInput(
       dropoffAddress: formatAddress(dropoffParts),
       allowUnverifiedPickup: data.allowUnverifiedPickup === true,
       allowUnverifiedDropoff: data.allowUnverifiedDropoff === true,
+    },
+  };
+}
+
+/**
+ * Parse a driver ride edit: contact, flight, addresses, and trip details.
+ * Phone and email are optional (phone-in rides may have neither).
+ */
+export function validateDriverRideEdit(
+  body: unknown
+): ValidateDriverRideEditResult {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, message: 'Invalid booking fields' };
+  }
+
+  const data = body as Record<string, unknown>;
+  const pickupParts = parseAddressParts(data.pickup);
+  const dropoffParts = parseAddressParts(data.dropoff);
+  const tripType = data.tripType;
+  const passengerCount = Number(data.passengerCount);
+
+  if (typeof data.customerName !== 'string' || !data.customerName.trim()) {
+    return { ok: false, message: 'Name is required.' };
+  }
+
+  if (!['airport', 'medical', 'school', 'other'].includes(String(tripType))) {
+    return { ok: false, message: 'Pick a trip type.' };
+  }
+
+  if (!Number.isFinite(passengerCount) || passengerCount < 1) {
+    return { ok: false, message: 'Passengers must be at least 1.' };
+  }
+
+  if (!pickupParts) {
+    return {
+      ok: false,
+      message: 'From needs a street, city, state, and ZIP.',
+    };
+  }
+  if (!dropoffParts) {
+    return {
+      ok: false,
+      message: 'To needs a street, city, state, and ZIP.',
+    };
+  }
+
+  let startAt: string | null = null;
+  if (typeof data.startAt === 'string' && data.startAt.trim()) {
+    const parsed = new Date(data.startAt);
+    if (Number.isNaN(parsed.getTime())) {
+      return { ok: false, message: 'Invalid date and time.' };
+    }
+    startAt = parsed.toISOString();
+  }
+
+  const driverIdRaw = data.driverId;
+  const driverId =
+    typeof driverIdRaw === 'number' && driverIdRaw > 0
+      ? Math.floor(driverIdRaw)
+      : null;
+
+  return {
+    ok: true,
+    form: {
+      customerName: data.customerName.trim(),
+      customerPhone: optionalTrimmed(data.customerPhone),
+      customerEmail: optionalTrimmed(data.customerEmail),
+      airlineName: optionalTrimmed(data.airlineName),
+      flightNumberFrom: optionalTrimmed(data.flightNumberFrom),
+      flightNumberTo: optionalTrimmed(data.flightNumberTo),
+      pickupParts,
+      dropoffParts,
+      passengerCount: Math.floor(passengerCount),
+      tripType: tripType as DriverRideEditInput['tripType'],
+      notes: optionalTrimmed(data.notes),
+      allowUnverifiedPickup: data.allowUnverifiedPickup === true,
+      allowUnverifiedDropoff: data.allowUnverifiedDropoff === true,
+      driverId,
+      startAt,
     },
   };
 }

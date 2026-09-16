@@ -4,10 +4,45 @@
 |---|---|
 | **Purpose** | What the product is, who it serves, and how booking works |
 | **Companion doc** | [IMPLEMENTATION.md](./IMPLEMENTATION.md) — technical build details |
-| **Last updated** | 2026-09-10 |
+| **Last updated** | 2026-09-15 |
 
 ## Changelog
 
+- **2026-09-15** — Driver Rides: with Bob’s and Pam’s boxes unchecked,
+  Pending and Confirmed still list every driver’s rides; Done, Declined,
+  and No-Show stay hidden unless those boxes are checked (PLAN-driven).
+- **2026-09-15** — Driver Rides: Bob’s Rides and Pam’s Rides both start
+  unchecked (PLAN-driven).
+- **2026-09-15** — Driver Rides: Bob’s Rides starts unchecked; Pam’s starts
+  checked (PLAN-driven).
+- **2026-09-15** — Customer submit button is “Click here to request your
+  ride”. ASAP requests are not assigned to a driver until the board picks
+  one (PLAN-driven).
+- **2026-09-15** — Customer ASAP explanation, calendar hint, and footer note
+  are hidden when those Settings fields are blank (PLAN-driven).
+- **2026-09-15** — Page subtitle may be blank; the customer banner hides it
+  when empty. Empty Settings text is stored as empty, not replaced by
+  defaults (PLAN-driven).
+- **2026-09-14** — Driver Settings Save must match what the server stored;
+  leaving and returning to Settings keeps that saved copy (PLAN-driven).
+- **2026-09-14** — Driver Settings form keeps the saved values on screen;
+  a background reload cannot put the previous text back (PLAN-driven).
+- **2026-09-14** — Driver Settings Save writes immediately and is not reverted
+  by the ride board’s 15-second refresh (PLAN-driven).
+- **2026-09-14** — Driver Rides: Edit under Status; rows show email, flight
+  info, passengers, and notes. Customer page applies Settings immediately
+  (PLAN-driven).
+- **2026-09-14** — Customer form: Flight Information panel (airline, flight
+  number from, flight number to) between Email and Pickup (PLAN-driven).
+- **2026-09-14** — ASAP form no longer shows “ASAP — we’ll call as soon as we
+  can” under the heading (PLAN-driven).
+- **2026-09-14** — ASAP form heading is “Please enter your ride details”
+  (PLAN-driven).
+- **2026-09-14** — Customer page hides the booking calendar and the Pick a time
+  slot / Need a ride ASAP buttons; customers see the ASAP ride form by default
+  (easier for elderly riders; PLAN-driven).
+- **2026-09-12** — Browser tab shows the Bob-n-Pam car favicon next to the site
+  URL (PLAN-driven).
 - **2026-09-10** — Driver Rides: Add Ride after the driver-name filters; popout
   for phone-in bookings (name, optional phone, From/To addresses, open-slot
   date/time, driver dropdown). Saved as confirmed. Button shows even with no
@@ -46,12 +81,14 @@
 
 ## Overview
 
-**Bob-n-Pam Drive** is a simple ride-booking website for South Carolina. It is **not** like Uber: no payments, no live map, no driver tracking. Customers reserve a time (or request ASAP); drivers call to confirm and use contact info to reach the customer.
+**Bob-n-Pam Drive** is a simple ride-booking website for South Carolina. It is **not** like Uber: no payments, no live map, no driver tracking. Customers request an ASAP ride (the slot calendar is hidden for now); drivers call to confirm and use contact info to reach the customer. Scheduled rides can still be taken by phone on the driver board.
 
 ## Branding
 
 - **Business name:** Bob-n-Pam Drive (shown on banner)
-- **Page subtitle:** Short description under the business name (editable in driver Settings)
+- **Favicon:** Teal-to-blue rounded badge with a white car; shown in the
+  browser tab with the site URL
+- **Page subtitle:** Short description under the business name (editable in driver Settings; may be blank)
 - **Banner backdrop:** Sky blue (configurable later in driver Settings)
 - Branding is experimental; name and colors should be changeable without code changes
 
@@ -59,7 +96,7 @@
 
 | User | Goal |
 |------|------|
-| **Customer** | Book a ride or request ASAP; receive email with change/cancel link; notified by email when ride is confirmed or declined |
+| **Customer** | Request an ASAP ride; receive email with change/cancel link; notified by email when ride is confirmed or declined |
 | **Driver (Bob & Pam)** | See bookings, call customers, confirm/adjust rides, set own availability |
 
 ## Pages
@@ -68,21 +105,26 @@
 
 - Colorful banner with business name
 - Short service description (South Carolina, mostly airport, scheduled + same-day)
-- **Calendar of open slots** for the next **14 days** (configurable)
-- Each open slot shows the **driver’s first name**
-- **ASAP button:** “Need a ride as soon as possible”
-- Booking form (see below)
+- **ASAP ride form** shown by default (no mode toggle); heading **Please enter
+  your ride details** (no ASAP subtitle under the heading); the yellow ASAP
+  explanation notice is omitted when that Settings field is blank; **Flight
+  Information** panel between Email and Pickup; submit button **Click here to
+  request your ride**
+- **Temporarily hidden** (drivers asked for a simpler page for elderly customers):
+  the **calendar of open slots**, **Pick a time slot**, and **Need a ride ASAP**
+- Slot calendar (next **14 days**, driver first names on each slot) stays in the
+  product for later; drivers still pick open slots when adding a phone-in ride
 - After submit: **“We’ll call to confirm”** + confirmation email with change/cancel link
 - Optional: public business phone for “just call us” (open question)
 
 ### 2. Driver board (`/driver`)
 
 - **Shared password** (one password for both drivers)
-- **Rides tab:** datagrid of bookings (sort by When, Customer, Trip, Status); filters for Pending (on), Confirmed (on), Done, Declined, and No-Show (last three off by default); **pending rows highlighted light red**; **confirmed rows highlighted light green**; payment fields; status actions in a 2x2 (Confirm/Done, No-show/Decline); tap-to-call; **To pickup** opens Apple Maps with To = pickup; **To drop-off** opens From = pickup and To = drop-off (no computer GPS); driver taps Go in Maps for spoken turns; **Add Ride** (after the `{name}'s Rides` filters, including when the list is empty) opens the booking popout for a phone-in ride
+- **Rides tab:** datagrid of bookings (sort by When, Customer, Trip, Status); filters for Pending (on), Confirmed (on), Done, Declined, and No-Show (last three off by default); **Bob’s Rides and Pam’s Rides off** (both off still shows every pending and confirmed ride; checking a name narrows to that driver plus Unassigned); **pending rows highlighted light red**; **confirmed rows highlighted light green**; customer ASAP rides start as **Unassigned** and stay visible for both drivers until Edit picks Bob or Pam; payment fields; status actions in a 2x2 (Confirm/Done, No-show/Decline); **Edit** under the Status badge opens a popout to change ride details (name, phone, email, flight info, From/To, passengers, trip type, notes, driver, time); rows show email, airline, flight numbers, passengers, and notes; tap-to-call; **To pickup** opens Apple Maps with To = pickup; **To drop-off** opens From = pickup and To = drop-off (no computer GPS); driver taps Go in Maps for spoken turns; **Add Ride** (after the `{name}'s Rides` filters, including when the list is empty) opens the booking popout for a phone-in ride
 - **Fares tab:** per-driver completed-ride money totals
 - **Hours tab:** each driver sets their own weekly availability and days off
 - **Reports tab:** submenu for **Fares by Month** (date range; charged/received/tips by month and driver; print; Excel CSV) and **Monthly rides and destinations** (trip log by month with pickup/drop-off; print; Excel CSV)
-- **Settings tab:** business name, banner color, **calendar slot button color**, booking window (days), **customer message text**, and **message highlight color**
+- **Settings tab:** business name, banner color, **calendar slot button color**, booking window (days), **customer message text**, and **message highlight color**; Save writes immediately and the form keeps those values; the ride list can keep refreshing without putting old Settings back
 
 ## Booking form fields
 
@@ -91,9 +133,12 @@
 | Name | Yes |
 | Phone | Yes |
 | Email | Yes |
+| Airline name | No |
+| Flight number from | No |
+| Flight number to | No |
 | Pickup: street, city, state, ZIP | Yes (all four; checked against US records) |
 | Drop-off: street, city, state, ZIP | Yes (all four; checked against US records) |
-| Date/time (from selected slot, or ASAP) | Yes |
+| Date/time (ASAP now; selected slot when the calendar is shown) | Yes |
 | Number of passengers | Yes |
 | Trip type (dropdown) | Yes |
 | Notes (wheelchair, car seat, bags, etc.) | No |
@@ -127,7 +172,7 @@ when there are no bookings yet.
 
 ### Trip types
 
-- **Airport** — use the terminal’s street address, city, state, and ZIP (not only “CHS”)
+- **Airport** — use the terminal’s street address, city, state, and ZIP (not only “CHS”); optional **Flight Information** (airline, flight number from, flight number to)
 - **Medical**
 - **School**
 - **Other** — does **not** require a description (optional notes only)
@@ -135,6 +180,9 @@ when there are no bookings yet.
 ## Booking rules
 
 ### Slot booking
+
+Customer slot picking is **hidden for now**. The steps below still apply to
+driver **Add Ride** and will apply on the public page when the calendar returns.
 
 1. Customer picks an **open slot** labeled with a driver’s first name
 2. System **holds** that driver’s time so no one else can book it
@@ -158,10 +206,13 @@ Driver may **extend or shorten** the hold when confirming (e.g. long airport run
 
 ### Same-day and “now”
 
-- Customers may book **any remaining open slot today**
+- **For now, customers submit the ASAP form** (they do not pick a calendar time)
 - **ASAP** does not require picking a calendar time:
-  - If a driver is **on duty:** create urgent request; both on-duty drivers see it; hold goes to whoever has the **sooner** next open slot (default proposal)
-  - If **nobody on duty:** show message to pick a later slot or call
+  - If a driver is **on duty:** create an urgent request with **no driver
+    assigned**; both drivers see it and pick who takes it
+  - If **nobody on duty:** show a message to **call** (calendar is hidden)
+- When the calendar is shown again, customers may also book **any remaining open
+  slot today**
 
 ### Booking window
 
@@ -188,6 +239,7 @@ Driver may **extend or shorten** the hold when confirming (e.g. long airport run
 
 - **Two drivers**, different schedules
 - **One shared calendar** — open slots indicate **which driver**
+- The **customer calendar is hidden for now**; drivers still use open slots for **Add Ride**
 - When **both drivers are open at the same time**, the calendar shows **one time row with a button for each driver** (Bob and Pam side by side)
 - Each driver manages **their own** availability
 - Driver first names on slots (assumed **Bob** and **Pam** — confirm before launch)
@@ -198,17 +250,17 @@ One website for all devices:
 
 | Device | Experience |
 |--------|------------|
-| **iPhone (Safari)** | Stacked layout; agenda/day slot list; tap-to-call; Apple Maps pickup/drop-off; Add to Home Screen friendly |
-| **Windows (Edge, Chrome, Firefox)** | Wider layout; week-style calendar; roomier driver table |
+| **iPhone (Safari)** | Stacked ASAP form (calendar hidden for now); tap-to-call; Apple Maps pickup/drop-off; Add to Home Screen friendly |
+| **Windows (Edge, Chrome, Firefox)** | Wider ASAP form (week calendar hidden for now); roomier driver table |
 | **Tablet** | Between phone and desktop layouts |
 
 - Phone-first design; desktop gets more horizontal space
 - No hover-only actions (must work on touch)
 - Same URLs and data everywhere
-- **Live sync:** customer calendar refreshes when drivers change hours; driver board refreshes when customers book (polling every 15 seconds while the tab is open, plus on tab focus)
-- **Slot booking UX:** after picking a time, the trip form appears **next to** the calendar on desktop (sticky side panel) or **above** the calendar on phone — never buried at the bottom of the page
-- **Calendar context:** the week view shows **month and year** at the top (e.g. “September 2026”, or a range when the week crosses months)
-- **Customer notices:** success, error, hints, ASAP info, and footer use a **highlight background** (color set in driver Settings); message wording is editable there too
+- **Live sync:** driver board refreshes when customers book (polling every 15 seconds while the tab is open, plus on tab focus); **customer page loads Settings on open** and again every 15 seconds / on tab focus; slot list still refreshes in the background for when the calendar is shown again
+- **Slot booking UX** (when the calendar is shown): after picking a time, the trip form appears **next to** the calendar on desktop (sticky side panel) or **above** the calendar on phone — never buried at the bottom of the page
+- **Calendar context** (when shown): the week view shows **month and year** at the top (e.g. “September 2026”, or a range when the week crosses months)
+- **Customer notices:** success, error, hints, ASAP info, and footer use a **highlight background** (color set in driver Settings); message wording is editable there too; hint, ASAP info, and footer are omitted when their Settings text is blank
 
 ## Out of scope (v1)
 
@@ -225,7 +277,7 @@ One website for all devices:
 | # | Question | Default / proposal |
 |---|----------|-------------------|
 | 1 | Driver first names on calendar | Bob and Pam (confirm) |
-| 2 | ASAP when both on duty | Both see request; hold sooner next slot |
+| 2 | ASAP when both on duty | Both see request; no driver until board assigns |
 | 3 | Public business phone on customer page | TBD |
 | 4 | Email from-address and inbox for confirm + ASAP alerts | TBD (one shared inbox OK) |
 | 5 | Hosting / domain | TBD |

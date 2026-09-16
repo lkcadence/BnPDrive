@@ -84,6 +84,28 @@ export function formatAddress(parts: AddressParts): string {
   return `${parts.street}, ${parts.city}, ${parts.state} ${parts.zip}`;
 }
 
+/**
+ * Split a stored `street, City, ST ZIP` line back into form fields.
+ * If the line does not match, the whole value goes in street.
+ */
+export function splitStoredAddress(line: string): AddressParts {
+  const trimmed = line.trim();
+  const match = trimmed.match(
+    /^(.*),\s*([^,]+),\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/
+  );
+  if (!match) {
+    return { street: trimmed, city: '', state: 'SC', zip: '' };
+  }
+
+  const state = match[3].toUpperCase();
+  return {
+    street: match[1].trim(),
+    city: match[2].trim(),
+    state: STATE_SET.has(state) ? state : 'SC',
+    zip: match[4],
+  };
+}
+
 function titleCaseCity(city: string): string {
   return city
     .toLowerCase()

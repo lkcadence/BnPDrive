@@ -5,7 +5,7 @@ import WeekCalendar from '@/components/WeekCalendar';
 import MobileSlotAgenda from '@/components/MobileSlotAgenda';
 import CustomerNotice from '@/components/CustomerNotice';
 import { US_STATE_CODES } from '@/lib/address';
-import { DEFAULT_CUSTOMER_MESSAGES, DEFAULT_MESSAGE_BACKGROUND } from '@/lib/customer-messages';
+import { DEFAULT_MESSAGE_BACKGROUND } from '@/lib/customer-messages';
 import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh';
 
 export type CustomerSettings = {
@@ -47,6 +47,9 @@ type FormState = {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  airlineName: string;
+  flightNumberFrom: string;
+  flightNumberTo: string;
   pickupStreet: string;
   pickupCity: string;
   pickupState: string;
@@ -66,6 +69,9 @@ const emptyForm: FormState = {
   customerName: '',
   customerPhone: '',
   customerEmail: '',
+  airlineName: '',
+  flightNumberFrom: '',
+  flightNumberTo: '',
   pickupStreet: '',
   pickupCity: '',
   pickupState: 'SC',
@@ -81,6 +87,12 @@ const emptyForm: FormState = {
   allowUnverifiedDropoff: false,
 };
 
+/**
+ * Temporary: hide the slot calendar and mode buttons so elderly customers
+ * land on the ASAP form. Set to true to restore Pick a time slot.
+ */
+const SHOW_CUSTOMER_SLOT_BOOKING = false;
+
 type FormFieldValue = string | number | boolean;
 
 function formatSlotSummary(slot: OpenSlot): string {
@@ -91,6 +103,53 @@ function formatSlotSummary(slot: OpenSlot): string {
     hour: 'numeric',
     minute: '2-digit',
   })}`;
+}
+
+/**
+ * Optional airline and flight numbers between Email and Pickup.
+ */
+function FlightInformationFields({
+  form,
+  onFieldChange,
+}: {
+  form: FormState;
+  onFieldChange: (field: string, value: FormFieldValue) => void;
+}) {
+  return (
+    <div className="address-block">
+      <h3 className="address-block-title">Flight Information</h3>
+      <label>
+        Airline Name
+        <input
+          autoComplete="off"
+          value={form.airlineName}
+          onChange={(event) => onFieldChange('airlineName', event.target.value)}
+        />
+      </label>
+      <div className="flight-number-row">
+        <label>
+          Flight Number From
+          <input
+            autoComplete="off"
+            value={form.flightNumberFrom}
+            onChange={(event) =>
+              onFieldChange('flightNumberFrom', event.target.value)
+            }
+          />
+        </label>
+        <label>
+          Flight Number To
+          <input
+            autoComplete="off"
+            value={form.flightNumberTo}
+            onChange={(event) =>
+              onFieldChange('flightNumberTo', event.target.value)
+            }
+          />
+        </label>
+      </div>
+    </div>
+  );
 }
 
 function AddressFields({
@@ -240,6 +299,7 @@ function BookingForm({
           onChange={(event) => onFieldChange('customerEmail', event.target.value)}
         />
       </label>
+      <FlightInformationFields form={form} onFieldChange={onFieldChange} />
       <AddressFields
         kind="pickup"
         form={form}
@@ -302,7 +362,9 @@ export default function CustomerBookingPage({
   const [settings, setSettings] = useState<CustomerSettings>(initialSettings);
   const [days, setDays] = useState<SlotDay[]>(initialDays);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<BookingMode>('slot');
+  const [mode, setMode] = useState<BookingMode>(
+    SHOW_CUSTOMER_SLOT_BOOKING ? 'slot' : 'asap'
+  );
   const [selectedSlot, setSelectedSlot] = useState<OpenSlot | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [message, setMessage] = useState<string | null>(null);
@@ -431,6 +493,9 @@ export default function CustomerBookingPage({
       customerName: form.customerName,
       customerPhone: form.customerPhone,
       customerEmail: form.customerEmail,
+      airlineName: form.airlineName,
+      flightNumberFrom: form.flightNumberFrom,
+      flightNumberTo: form.flightNumberTo,
       pickup: {
         street: form.pickupStreet,
         city: form.pickupCity,
@@ -477,23 +542,23 @@ export default function CustomerBookingPage({
     setPickupNeedsConfirm(false);
     setDropoffNeedsConfirm(false);
     setSelectedSlot(null);
-    setMode('slot');
+    setMode(SHOW_CUSTOMER_SLOT_BOOKING ? 'slot' : 'asap');
     await loadSlots({ silent: true });
   }
 
   const noticeBackground = settings.messageBackgroundColor || DEFAULT_MESSAGE_BACKGROUND;
-  const customerMessages = {
-    asapInfo: settings.messageAsapInfo || DEFAULT_CUSTOMER_MESSAGES.messageAsapInfo,
-    bookingHint: settings.messageBookingHint || DEFAULT_CUSTOMER_MESSAGES.messageBookingHint,
-    footerNote: settings.messageFooterNote || DEFAULT_CUSTOMER_MESSAGES.messageFooterNote,
-  };
+  const asapInfo = settings.messageAsapInfo.trim();
+  const bookingHint = settings.messageBookingHint.trim();
+  const footerNote = settings.messageFooterNote.trim();
 
   return (
     <>
       <header className="banner" style={{ backgroundColor: settings.bannerColor }}>
         <div className="container">
           <h1>{settings.businessName}</h1>
-          <p>{settings.bannerSubtitle}</p>
+          {settings.bannerSubtitle.trim() ? (
+            <p>{settings.bannerSubtitle}</p>
+          ) : null}
         </div>
       </header>
 
@@ -514,44 +579,49 @@ export default function CustomerBookingPage({
 
         <section className="card booking-section">
           <h2 className="section-title">Book a ride</h2>
-          <div className="actions-row booking-mode-toggle">
-            <button
-              type="button"
-              className={`btn ${mode === 'slot' ? '' : 'btn-secondary'}`}
-              onClick={() => {
-                setMode('slot');
-                setError(null);
-              }}
-            >
-              Pick a time slot
-            </button>
-            <button
-              type="button"
-              className={`btn ${mode === 'asap' ? '' : 'btn-secondary'}`}
-              onClick={() => {
-                setMode('asap');
-                setSelectedSlot(null);
-                setError(null);
-              }}
-            >
-              Need a ride ASAP
-            </button>
-          </div>
+          {SHOW_CUSTOMER_SLOT_BOOKING && (
+            <div className="actions-row booking-mode-toggle">
+              <button
+                type="button"
+                className={`btn ${mode === 'slot' ? '' : 'btn-secondary'}`}
+                onClick={() => {
+                  setMode('slot');
+                  setError(null);
+                }}
+              >
+                Pick a time slot
+              </button>
+              <button
+                type="button"
+                className={`btn ${mode === 'asap' ? '' : 'btn-secondary'}`}
+                onClick={() => {
+                  setMode('asap');
+                  setSelectedSlot(null);
+                  setError(null);
+                }}
+              >
+                Need a ride ASAP
+              </button>
+            </div>
+          )}
 
           {mode === 'asap' && (
             <>
-              <CustomerNotice backgroundColor={noticeBackground}>
-                {customerMessages.asapInfo}
-              </CustomerNotice>
+              {asapInfo ? (
+                <CustomerNotice backgroundColor={noticeBackground}>
+                  {asapInfo}
+                </CustomerNotice>
+              ) : null}
               <aside className="booking-panel booking-panel--open">
                 <div className="booking-panel-header">
-                  <h3 className="booking-panel-title">Ride details</h3>
-                  <p className="booking-panel-subtitle">ASAP — we’ll call as soon as we can</p>
+                  <h3 className="booking-panel-title">Please enter your ride details</h3>
+                  {/* ASAP subtitle hidden while the calendar is off. */}
+                  {/* <p className="booking-panel-subtitle">ASAP — we’ll call as soon as we can</p> */}
                 </div>
                 <BookingForm
                   form={form}
                   submitting={submitting}
-                  submitLabel="Request ASAP ride"
+                  submitLabel="Click here to request your ride"
                   pickupNeedsConfirm={pickupNeedsConfirm}
                   dropoffNeedsConfirm={dropoffNeedsConfirm}
                   onFieldChange={updateField}
@@ -561,7 +631,7 @@ export default function CustomerBookingPage({
             </>
           )}
 
-          {mode === 'slot' && (
+          {SHOW_CUSTOMER_SLOT_BOOKING && mode === 'slot' && (
             <div
               className={`booking-layout ${showSlotForm ? 'booking-layout--open' : ''}`}
             >
@@ -597,14 +667,14 @@ export default function CustomerBookingPage({
               )}
 
               <div className="booking-calendar">
-                {!showSlotForm && (
+                {!showSlotForm && bookingHint ? (
                   <CustomerNotice
                     backgroundColor={noticeBackground}
                     className="booking-hint"
                   >
-                    {customerMessages.bookingHint}
+                    {bookingHint}
                   </CustomerNotice>
-                )}
+                ) : null}
 
                 {totalWeeks > 1 && (
                   <div className="week-nav">
@@ -656,14 +726,16 @@ export default function CustomerBookingPage({
         </section>
       </main>
 
-      <footer className="site-footer">
-        <CustomerNotice
-          backgroundColor={noticeBackground}
-          className="site-footer-notice"
-        >
-          {customerMessages.footerNote}
-        </CustomerNotice>
-      </footer>
+      {footerNote ? (
+        <footer className="site-footer">
+          <CustomerNotice
+            backgroundColor={noticeBackground}
+            className="site-footer-notice"
+          >
+            {footerNote}
+          </CustomerNotice>
+        </footer>
+      ) : null}
     </>
   );
 }

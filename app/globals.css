@@ -213,6 +213,12 @@ button {
   gap: 0.5rem;
 }
 
+.flight-number-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
 .form-grid .address-anyway {
   display: flex;
   align-items: flex-start;
@@ -227,7 +233,8 @@ button {
 }
 
 @media (max-width: 419px) {
-  .address-city-row {
+  .address-city-row,
+  .flight-number-row {
     grid-template-columns: 1fr;
   }
 }
@@ -1166,6 +1173,20 @@ button {
   font-weight: 600;
   text-transform: capitalize;
   background: #eef3f8;
+}
+
+.ride-status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.ride-edit-btn {
+  min-width: 0;
+  min-height: 36px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
 }
 
 .actions-row {

@@ -10,8 +10,8 @@ type AutoRefreshOptions = {
 };
 
 /**
- * Polls on an interval while the tab is visible, and refreshes when the tab
- * regains focus so open pages stay in sync across customer and driver views.
+ * Refreshes immediately when the tab is visible, then on an interval, and
+ * again when the tab becomes visible so live data stays in sync.
  */
 export function useAutoRefresh(
   refresh: () => void | Promise<void>,
@@ -56,6 +56,7 @@ export function useAutoRefresh(
     };
 
     if (document.visibilityState === 'visible') {
+      run();
       startPolling();
     }
 

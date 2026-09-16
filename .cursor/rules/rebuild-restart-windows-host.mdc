@@ -26,10 +26,18 @@ as-is.
 cd L:\BnPDrive
 npx next build
 Stop-ScheduledTask -TaskName BnPDrive
+Get-NetTCPConnection -LocalPort 3100 -State Listen -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 Start-ScheduledTask -TaskName BnPDrive
 ```
 
-Then confirm `http://localhost:3100` returns 200.
+`Stop-ScheduledTask` often leaves the old `next start` process listening on
+3100 (the task is already Ready, not Running). Kill that listener or the new
+task fails with result 1 and the public site keeps serving the previous
+build.
+
+Then confirm `http://localhost:3100` returns 200 and the homepage HTML has
+the expected new copy (not leftover strings from the previous UI).
 
 If the build fails, fix it and rebuild. Do not restart the task on a failed
 build. Do not ask the user to run these commands.
