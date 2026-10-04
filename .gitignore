@@ -38,6 +38,9 @@ yarn-error.log*
 /data/*.db-shm
 /data/*.db-wal
 /data/settings-last-write.json
+/data/next-start.log
+/data/next-start.log.old
+/data/ensure-production.log
 
 # typescript
 *.tsbuildinfo

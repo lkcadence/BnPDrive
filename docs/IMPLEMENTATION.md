@@ -4,10 +4,15 @@
 |---|---|
 | **Purpose** | How to build the product: stack, routes, data, logic, and verification |
 | **Companion doc** | [PLAN.md](./PLAN.md) — product requirements and UX rules |
-| **Last updated** | 2026-09-15 |
+| **Last updated** | 2026-09-16 |
 
 ## Changelog
 
+- **2026-09-16** — After a power-loss reboot, **BnPDrive** starts 3 minutes
+  after boot with no Windows logon; **BnPDriveWatch** checks
+  `http://127.0.0.1:3100` at 6 minutes, at logon, and every 5 minutes, and
+  restarts the origin if it is not HTTP 200. Typical public recovery is about
+  3–8 minutes after Windows is up (PLAN-driven).
 - **2026-09-15** — Driver name filters only apply when at least one `{name}'s
   Rides` box is checked; both off lists all drivers for the active status
   filters (PLAN-driven).
@@ -330,14 +335,18 @@ Customer slot picking is gated by `SHOW_CUSTOMER_SLOT_BOOKING` in
 
 ## Windows production host (this machine)
 
-Public URL `https://bobnpamdrive.com` is served by Cloudflared to
-`http://localhost:3100`. The app is the Windows scheduled task **BnPDrive**
-(`next start -p 3100` from `L:\BnPDrive`, starts 1 minute after boot).
-
-After application code changes, ask before rebuilding and restarting that
-task (see `.cursor/rules/rebuild-restart-windows-host.mdc`). After
-`Stop-ScheduledTask`, kill any process still listening on 3100, then start
-the task — otherwise the old `next start` keeps serving. Do not run
+Public URL `https://bobnpamdrive.com` is served by Cloudflared (Windows
+service, Automatic) to `http://localhost:3100`. The app is the Windows
+scheduled task **BnPDrive** (`next start -p 3100` from `L:\BnPDrive`, SYSTEM,
+3 minutes after boot, on AC or battery, **without a Windows logon**). Typical
+recovery is about 3–8 minutes after Windows is up. **BnPDriveWatch** runs
+`scripts/ensure-production.cmd` 6 minutes after boot, at user logon, and every
+5 minutes: if the homepage is not HTTP 200 it ends **BnPDrive**, kills a
+leftover listener on 3100, and starts the task again. After application
+code changes, ask before rebuilding and restarting **BnPDrive** (see
+`.cursor/rules/rebuild-restart-windows-host.mdc`). Do not use SYSTEM
+PowerShell for these tasks — it can hang on this host. After `Stop-ScheduledTask`,
+kill any process still listening on 3100, then start the task. Do not run
 `next dev` on 3100.
 
 ## Project structure (planned)
@@ -364,6 +373,9 @@ BnPDrive/
     bookings/validation.ts
     address.ts                  # Census geocoder + street/city/state/ZIP
     init.ts                     # DB seed on first request
+  scripts/
+    start-next-production.ps1   # unused; SYSTEM powershell hangs on this host
+    ensure-production.cmd       # BnPDriveWatch health restart
   data/bnp-drive.db             # Created at runtime (gitignored)
   docs/PLAN.md
   docs/IMPLEMENTATION.md

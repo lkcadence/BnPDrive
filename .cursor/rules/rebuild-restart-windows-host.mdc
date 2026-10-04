@@ -36,6 +36,10 @@ Start-ScheduledTask -TaskName BnPDrive
 task fails with result 1 and the public site keeps serving the previous
 build.
 
+**BnPDriveWatch** (`scripts/ensure-production.cmd`) restarts **BnPDrive**
+when `http://127.0.0.1:3100` is not HTTP 200 (boot + logon + every 5 minutes).
+Do not disable that task.
+
 Then confirm `http://localhost:3100` returns 200 and the homepage HTML has
 the expected new copy (not leftover strings from the previous UI).
 

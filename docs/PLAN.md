@@ -4,10 +4,13 @@
 |---|---|
 | **Purpose** | What the product is, who it serves, and how booking works |
 | **Companion doc** | [IMPLEMENTATION.md](./IMPLEMENTATION.md) — technical build details |
-| **Last updated** | 2026-09-15 |
+| **Last updated** | 2026-09-16 |
 
 ## Changelog
 
+- **2026-09-16** — After a power outage, the public booking site is meant to
+  return on its own a few minutes after the office PC finishes booting.
+  Nobody needs to sign into Windows first (PLAN-driven).
 - **2026-09-15** — Driver Rides: with Bob’s and Pam’s boxes unchecked,
   Pending and Confirmed still list every driver’s rides; Done, Declined,
   and No-Show stay hidden unless those boxes are checked (PLAN-driven).
@@ -82,6 +85,9 @@
 ## Overview
 
 **Bob-n-Pam Drive** is a simple ride-booking website for South Carolina. It is **not** like Uber: no payments, no live map, no driver tracking. Customers request an ASAP ride (the slot calendar is hidden for now); drivers call to confirm and use contact info to reach the customer. Scheduled rides can still be taken by phone on the driver board.
+
+After a power cut, the public site should come back by itself a few minutes
+after the office PC has finished booting. Signing into Windows is not required.
 
 ## Branding
 
